@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
 import {
   MessageSquare, LayoutDashboard,
-  LogOut, Shield, ChevronRight, Cpu, Database, ScanFace
+  LogOut, Shield, ChevronRight, Cpu, Database, ScanFace, ClipboardList, Briefcase
 } from 'lucide-react'
 
 const ROLE_COLORS = {
@@ -26,6 +26,10 @@ export default function Layout() {
     { to: '/chat', icon: Cpu, label: 'AI Chatbot', desc: 'Governed AI' },
     { to: '/messages', icon: MessageSquare, label: 'Secure Msg', desc: 'Private comms' },
     { to: '/attendance', icon: ScanFace, label: 'Attendance', desc: 'Face check-in/out' },
+    { to: '/my-work', icon: Briefcase, label: 'My Work', desc: 'Assigned tasks' },
+    ...(['admin', 'hr'].includes(user?.role)
+      ? [{ to: '/work-assignments', icon: ClipboardList, label: 'Work Assign', desc: 'Manager workspace' }]
+      : []),
     ...(user?.role === 'admin'
       ? [
           { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', desc: 'Audit & analytics' },
