@@ -1,20 +1,19 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
-import { Shield, Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { Shield, EyeOff, AlertCircle, KeyRound } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const DEMO_CREDS = [
-  { role: 'admin', username: 'admin', password: 'admin123', color: 'text-purple-400', bg: 'bg-purple-400/10 border-purple-400/20' },
-  { role: 'hr', username: 'hr_jane', password: 'hr123', color: 'text-warn', bg: 'bg-warn/10 border-warn/20' },
-  { role: 'intern', username: 'intern_bob', password: 'intern123', color: 'text-accent', bg: 'bg-accent/10 border-accent/20' },
+  { role: 'admin', username: 'admin', loginCode: 'ADMINCODE1', color: 'text-purple-400', bg: 'bg-purple-400/10 border-purple-400/20' },
+  { role: 'hr', username: 'hr_jane', loginCode: 'HRCODE0001', color: 'text-warn', bg: 'bg-warn/10 border-warn/20' },
+  { role: 'intern', username: 'intern_bob', loginCode: 'INTCODE001', color: 'text-accent', bg: 'bg-accent/10 border-accent/20' },
 ]
 
 export default function LoginPage() {
   const { login } = useAuth()
-  const [form, setForm] = useState({ username: '', password: '' })
-  const [showPw, setShowPw] = useState(false)
+  const [form, setForm] = useState({ username: '', loginCode: '' })
+  const [showCode, setShowCode] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -23,7 +22,7 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
     try {
-      await login(form.username, form.password)
+      await login(form.username, form.loginCode)
       toast.success('Welcome back!')
     } catch (err) {
       setError(err.response?.data?.error || 'Login failed')
@@ -32,12 +31,12 @@ export default function LoginPage() {
     }
   }
 
-  const quickLogin = async (username, password) => {
-    setForm({ username, password })
+  const quickLogin = async (username, loginCode) => {
+    setForm({ username, loginCode })
     setLoading(true)
     setError('')
     try {
-      await login(username, password)
+      await login(username, loginCode)
       toast.success('Signed in!')
     } catch {
       setError('Quick login failed')
@@ -48,7 +47,6 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-bg-900 grid-bg p-4">
-      {/* Ambient glow */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 bg-accent/5 rounded-full blur-3xl pointer-events-none" />
 
       <motion.div
@@ -57,7 +55,6 @@ export default function LoginPage() {
         transition={{ duration: 0.6, ease: 'easeOut' }}
         className="w-full max-w-md"
       >
-        {/* Header */}
         <div className="text-center mb-8">
           <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
@@ -71,9 +68,9 @@ export default function LoginPage() {
           <p className="text-slate-500 mt-1 text-sm font-mono tracking-wider">ENTERPRISE GOVERNANCE PLATFORM</p>
         </div>
 
-        {/* Card */}
         <div className="glass rounded-2xl p-8 shadow-card">
-          <h2 className="text-lg font-semibold text-white mb-6">Sign in to your account</h2>
+          <h2 className="text-lg font-semibold text-white mb-2">Sign in to your account</h2>
+          <p className="text-xs text-slate-500 mb-6">Use the employee code issued by your admin as your password.</p>
 
           {error && (
             <motion.div
@@ -100,22 +97,22 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-mono text-slate-500 uppercase tracking-wider mb-1.5">Password</label>
+              <label className="block text-xs font-mono text-slate-500 uppercase tracking-wider mb-1.5">Employee Code</label>
               <div className="relative">
                 <input
-                  type={showPw ? 'text' : 'password'}
-                  value={form.password}
-                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                  className="w-full px-4 py-3 pr-10 rounded-xl bg-bg-800 border border-white/8 text-white placeholder-slate-600 focus:outline-none focus:border-accent/50 focus:shadow-glow transition-all text-sm font-mono"
-                  placeholder="••••••••"
+                  type={showCode ? 'text' : 'password'}
+                  value={form.loginCode}
+                  onChange={e => setForm(f => ({ ...f, loginCode: e.target.value.toUpperCase() }))}
+                  className="w-full px-4 py-3 pr-10 rounded-xl bg-bg-800 border border-white/8 text-white placeholder-slate-600 focus:outline-none focus:border-accent/50 focus:shadow-glow transition-all text-sm font-mono tracking-[0.2em]"
+                  placeholder="YOURCODE01"
                   required
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPw(v => !v)}
+                  onClick={() => setShowCode(v => !v)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-accent transition-colors"
                 >
-                  {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
+                  {showCode ? <EyeOff size={15} /> : <KeyRound size={15} />}
                 </button>
               </div>
             </div>
@@ -130,28 +127,23 @@ export default function LoginPage() {
               {loading ? 'Authenticating...' : 'Sign In'}
             </motion.button>
           </form>
-
-          <p className="text-center text-slate-500 text-xs mt-4">
-            No account?{' '}
-            <Link to="/register" className="text-accent hover:underline">Create one</Link>
-          </p>
         </div>
 
-        {/* Demo credentials */}
         <div className="mt-6">
           <p className="text-center text-xs text-slate-600 font-mono uppercase tracking-wider mb-3">Quick Demo Access</p>
           <div className="grid grid-cols-3 gap-2">
-            {DEMO_CREDS.map(({ role, username, password, color, bg }) => (
+            {DEMO_CREDS.map(({ role, username, loginCode, color, bg }) => (
               <motion.button
                 key={role}
                 whileHover={{ scale: 1.03, y: -2 }}
                 whileTap={{ scale: 0.97 }}
-                onClick={() => quickLogin(username, password)}
+                onClick={() => quickLogin(username, loginCode)}
                 disabled={loading}
                 className={`p-3 rounded-xl border glass-light text-center cursor-pointer transition-all ${bg}`}
               >
                 <p className={`text-xs font-bold uppercase tracking-wider ${color}`}>{role}</p>
                 <p className="text-[10px] text-slate-500 font-mono mt-0.5">{username}</p>
+                <p className="text-[10px] text-slate-600 font-mono mt-1">{loginCode}</p>
               </motion.button>
             ))}
           </div>
