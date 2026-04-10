@@ -30,6 +30,8 @@ export default function Layout() {
       ? [
           { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', desc: 'Audit & analytics' },
           { to: '/question-bank', icon: Database, label: 'Question Bank', desc: 'Dataset ops' },
+          { to: '/ghost-mode', icon: Shield, label: 'Ghost Mode', desc: 'Stealth monitoring' },
+          { to: '/attack-sim', icon: Shield, label: 'Attack Simulator', desc: 'Security testing' },
         ]
       : []),
   ]
