@@ -1,3 +1,5 @@
+import json
+import logging
 from datetime import UTC, datetime, timedelta
 
 from flask import Blueprint, jsonify, request
@@ -12,13 +14,17 @@ from app.models.user import User
 from app.models.work_assignment import WorkAssignment
 from app.models.work_escalation import WorkEscalation
 from app.models.work_progress_update import WorkProgressUpdate
+from app.services.ai_service import get_ai_json_response
 from app.services.roles import is_manager_role
 
 work_management_bp = Blueprint("work_management", __name__)
+logger = logging.getLogger(__name__)
 
 ALLOWED_STATUSES = {"draft", "pending", "todo", "in_progress", "review", "blocked", "completed"}
 BOARD_ALLOWED_STATUSES = {"draft", "todo", "in_progress", "review", "blocked", "completed"}
 RISK_LEVEL_ORDER = {"low": 0, "medium": 1, "high": 2}
+SUGGESTION_SEVERITIES = {"low", "medium", "high"}
+SUGGESTION_IMPACTS = {"delay", "blocked", "risk"}
 
 
 def _current_user():
@@ -234,6 +240,123 @@ def _serialize_escalation(escalation: WorkEscalation | None):
     else:
         payload["assignment"] = None
     return payload
+
+
+def _summarize_assignment_for_ai(assignment: WorkAssignment):
+    serialized = _serialize_assignment(assignment, include_progress=True)
+    kpi = serialized.get("kpi") or {}
+    risk = serialized.get("capacity_risk") or {}
+    return {
+        "id": assignment.id,
+        "title": assignment.title,
+        "assignee_username": serialized.get("assigned_to_username"),
+        "status": assignment.status,
+        "due_date": serialized.get("due_date"),
+        "expected_units": kpi.get("expected_units"),
+        "completed_units": kpi.get("total_completed_units"),
+        "completion_ratio": kpi.get("completion_ratio"),
+        "risk_level": risk.get("level"),
+        "risk_reasons": risk.get("reasons") or [],
+    }
+
+
+def _build_escalation_suggestion_prompt(message: str, assignment_context: list[dict], system_signals: dict):
+    return f"""
+You are an enterprise operations assistant.
+
+Your job is to analyze a manager's situation and generate a structured escalation suggestion.
+
+IMPORTANT RULES:
+* Be concise and practical
+* Do NOT hallucinate unknown data
+* Use only the provided context
+* Output MUST be valid JSON
+* No extra text outside JSON
+
+MANAGER INPUT:
+{message}
+
+ASSIGNMENT CONTEXT:
+{json.dumps(assignment_context, default=str)}
+
+SYSTEM SIGNALS:
+{json.dumps(system_signals, default=str)}
+
+Return JSON in this exact format:
+{{
+  "reason": "short clear reason",
+  "severity": "low | medium | high",
+  "impact": "delay | blocked | risk",
+  "summary": "1-2 sentence explanation of the situation",
+  "suggestion": "clear actionable recommendation",
+  "affected_assignment_ids": [1, 2],
+  "draft_details": "natural language escalation note manager can submit"
+}}
+""".strip()
+
+
+def _derive_suggestion_severity(assignment_context: list[dict]):
+    if any(item.get("risk_level") == "high" or item.get("status") == "blocked" for item in assignment_context):
+        return "high"
+    if any(item.get("risk_level") == "medium" or item.get("status") == "in_progress" for item in assignment_context):
+        return "medium"
+    return "medium" if assignment_context else "low"
+
+
+def _fallback_escalation_suggestion(message: str, assignment_context: list[dict]):
+    assignment_titles = ", ".join(item["title"] for item in assignment_context) or "the selected work"
+    return {
+        "reason": "Operational risk detected",
+        "severity": _derive_suggestion_severity(assignment_context),
+        "impact": "delay",
+        "summary": f"Manager reported an operational issue affecting {assignment_titles}.",
+        "suggestion": "Review assignment ownership, rebalance work if needed, and escalate review with the accountable manager.",
+        "affected_assignment_ids": [item["id"] for item in assignment_context],
+        "draft_details": f"Operational escalation requested for {assignment_titles}: {message}",
+    }
+
+
+def _normalize_escalation_suggestion(raw: dict | None, message: str, assignment_context: list[dict]):
+    fallback = _fallback_escalation_suggestion(message, assignment_context)
+    data = raw if isinstance(raw, dict) else {}
+    valid_ids = {item["id"] for item in assignment_context}
+
+    def _text(field: str):
+        value = data.get(field)
+        return str(value).strip() if isinstance(value, str) and value.strip() else fallback[field]
+
+    severity = str(data.get("severity", "")).strip().lower()
+    if severity not in SUGGESTION_SEVERITIES:
+        severity = fallback["severity"]
+
+    impact = str(data.get("impact", "")).strip().lower()
+    if impact not in SUGGESTION_IMPACTS:
+        impact = fallback["impact"]
+
+    affected_ids = []
+    if isinstance(data.get("affected_assignment_ids"), list):
+        for item in data["affected_assignment_ids"]:
+            try:
+                candidate_id = int(item)
+            except (TypeError, ValueError):
+                continue
+            if candidate_id in valid_ids and candidate_id not in affected_ids:
+                affected_ids.append(candidate_id)
+    if not affected_ids:
+        affected_ids = fallback["affected_assignment_ids"]
+
+    affected_assignments = [item for item in assignment_context if item["id"] in affected_ids]
+
+    return {
+        "reason": _text("reason"),
+        "severity": severity,
+        "impact": impact,
+        "summary": _text("summary"),
+        "suggestion": _text("suggestion"),
+        "affected_assignment_ids": affected_ids,
+        "draft_details": _text("draft_details"),
+        "affected_assignments": affected_assignments,
+    }
 
 
 def _write_audit_log(user: User, query: str):
@@ -706,6 +829,59 @@ def list_work_escalations():
         "escalations": [_serialize_escalation(item) for item in escalations],
         "count": len(escalations),
     }), 200
+
+
+@work_management_bp.route("/work/escalations/suggest", methods=["POST"])
+@jwt_required()
+def suggest_work_escalation():
+    actor = _current_user()
+    if not _is_admin_or_hr(actor):
+        return jsonify({"error": "Admin/HR access required"}), 403
+
+    data = request.get_json() or {}
+    message = (data.get("message") or "").strip()
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+
+    assignment_ids = []
+    for raw_id in data.get("assignment_ids") or []:
+        try:
+            assignment_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if assignment_id not in assignment_ids:
+            assignment_ids.append(assignment_id)
+
+    assignments_query = WorkAssignment.query.options(joinedload(WorkAssignment.progress_updates))
+    if assignment_ids:
+        assignments_query = assignments_query.filter(WorkAssignment.id.in_(assignment_ids))
+    else:
+        assignments_query = assignments_query.filter(WorkAssignment.status != "completed").order_by(WorkAssignment.created_at.desc()).limit(3)
+    assignments = assignments_query.all()
+    for assignment in assignments:
+        assignment.sync_status_from_progress()
+    db.session.commit()
+
+    assignment_context = [_summarize_assignment_for_ai(item) for item in assignments]
+    system_signals = {
+        "include_team_context": bool(data.get("include_team_context", True)),
+        "selected_assignment_count": len(assignment_context),
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
+
+    raw_suggestion = None
+    try:
+        raw_suggestion = get_ai_json_response(
+            _build_escalation_suggestion_prompt(message, assignment_context, system_signals),
+            system_prompt="Return only valid JSON for an operational escalation suggestion.",
+            temperature=0.2,
+            max_output_tokens=900,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("AI escalation suggestion failed; using deterministic fallback: %s", exc)
+
+    suggestion = _normalize_escalation_suggestion(raw_suggestion, message, assignment_context)
+    return jsonify(suggestion), 200
 
 
 @work_management_bp.route("/work/escalations/<int:escalation_id>", methods=["PATCH"])

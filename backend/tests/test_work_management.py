@@ -840,6 +840,88 @@ def test_escalation_list_and_resolve_work_for_manager(client, auth_headers, user
     assert resolve_response.get_json()["escalation"]["status"] == "resolved"
 
 
+def test_escalation_suggestion_returns_normalized_contract(client, auth_headers, users, app, monkeypatch):
+    assignment_id = _create_assignment(
+        app,
+        assigned_by_user_id=users["admin"],
+        assigned_to_user_id=users["intern_bob"],
+        title="AI Suggestion Target",
+        expected_units=10,
+    )
+
+    monkeypatch.setattr(
+        "app.routes.work_management.get_ai_json_response",
+        lambda *args, **kwargs: {
+            "reason": "Staffing shortage",
+            "severity": "urgent",
+            "impact": "late",
+            "summary": "Two employees are absent and work may slip.",
+            "suggestion": "Reassign one active task and review the deadline.",
+            "affected_assignment_ids": [assignment_id, 9999],
+            "draft_details": "Escalating because staffing shortage may delay ticket completion.",
+        },
+    )
+
+    response = client.post(
+        "/api/work/escalations/suggest",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "message": "2 employees are absent today, we can’t complete tickets",
+            "assignment_ids": [assignment_id],
+            "include_team_context": True,
+        },
+    )
+
+    assert response.status_code == 200, response.get_json()
+    body = response.get_json()
+    assert set(body) == {
+        "reason",
+        "severity",
+        "impact",
+        "summary",
+        "suggestion",
+        "affected_assignment_ids",
+        "draft_details",
+        "affected_assignments",
+    }
+    assert body["reason"] == "Staffing shortage"
+    assert body["severity"] == "medium"
+    assert body["impact"] == "delay"
+    assert body["affected_assignment_ids"] == [assignment_id]
+    assert body["affected_assignments"][0]["id"] == assignment_id
+
+
+def test_escalation_suggestion_uses_deterministic_fallback_on_ai_failure(client, auth_headers, users, app, monkeypatch):
+    assignment_id = _create_assignment(
+        app,
+        assigned_by_user_id=users["admin"],
+        assigned_to_user_id=users["intern_bob"],
+        title="Fallback Suggestion Target",
+        expected_units=10,
+    )
+
+    def failing_ai(*args, **kwargs):
+        raise RuntimeError("ollama unavailable")
+
+    monkeypatch.setattr("app.routes.work_management.get_ai_json_response", failing_ai)
+
+    response = client.post(
+        "/api/work/escalations/suggest",
+        headers=auth_headers("hr_jane", "hr123"),
+        json={
+            "message": "2 employees are absent today, we can’t complete tickets",
+            "assignment_ids": [assignment_id],
+        },
+    )
+
+    assert response.status_code == 200, response.get_json()
+    body = response.get_json()
+    assert body["reason"] == "Operational risk detected"
+    assert body["impact"] == "delay"
+    assert body["affected_assignment_ids"] == [assignment_id]
+    assert body["affected_assignments"][0]["title"] == "Fallback Suggestion Target"
+
+
 def test_non_manager_cannot_list_or_resolve_escalations(client, auth_headers, users, app):
     assignment_id = _create_assignment(
         app,
