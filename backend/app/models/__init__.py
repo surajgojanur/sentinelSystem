@@ -1,3 +1,4 @@
+from app.models.role import Role
 from app.models.user import User
 from app.models.audit_log import AuditLog
 from app.models.message import Message
@@ -7,6 +8,7 @@ from app.models.face_profile import FaceProfile
 from app.models.attendance_record import AttendanceRecord
 
 __all__ = [
+    "Role",
     "User",
     "AuditLog",
     "Message",

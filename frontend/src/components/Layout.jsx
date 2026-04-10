@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
 import {
   MessageSquare, LayoutDashboard,
-  LogOut, Shield, ChevronRight, Cpu, Database, ScanFace
+  LogOut, Shield, ChevronRight, Cpu, Database, ScanFace, UserPlus
 } from 'lucide-react'
 
 const ROLE_COLORS = {
@@ -28,6 +28,7 @@ export default function Layout() {
     { to: '/attendance', icon: ScanFace, label: 'Attendance', desc: 'Face check-in/out' },
     ...(user?.role === 'admin'
       ? [
+          { to: '/user-access', icon: UserPlus, label: 'User Access', desc: 'Create accounts' },
           { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', desc: 'Audit & analytics' },
           { to: '/question-bank', icon: Database, label: 'Question Bank', desc: 'Dataset ops' },
           { to: '/ghost-mode', icon: Shield, label: 'Ghost Mode', desc: 'Stealth monitoring' },
@@ -38,14 +39,12 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg-900 grid-bg">
-      {/* Sidebar */}
       <motion.aside
         initial={{ x: -80, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
         className="w-64 flex flex-col glass border-r border-white/5 z-20"
       >
-        {/* Logo */}
         <div className="p-6 border-b border-white/5">
           <div className="flex items-center gap-3">
             <div className="relative">
@@ -61,7 +60,6 @@ export default function Layout() {
           </div>
         </div>
 
-        {/* User Info */}
         <div className="p-4 border-b border-white/5">
           <div className="glass-light rounded-xl p-3">
             <div className="flex items-center gap-3">
@@ -74,14 +72,13 @@ export default function Layout() {
               </div>
             </div>
             <div className="mt-2">
-              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${ROLE_COLORS[user?.role]}`}>
-                {ROLE_BADGE[user?.role]}
+              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${ROLE_COLORS[user?.role] || 'text-slate-300 bg-white/5 border-white/10'}`}>
+                {ROLE_BADGE[user?.role] || user?.role?.toUpperCase()}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Nav */}
         <nav className="flex-1 p-3 space-y-1">
           {navItems.map(({ to, icon: Icon, label, desc }) => (
             <NavLink key={to} to={to}>
@@ -111,7 +108,6 @@ export default function Layout() {
           ))}
         </nav>
 
-        {/* Logout */}
         <div className="p-3 border-t border-white/5">
           <motion.button
             whileHover={{ x: 4 }}
@@ -127,7 +123,6 @@ export default function Layout() {
         </div>
       </motion.aside>
 
-      {/* Main content */}
       <main className="flex-1 overflow-hidden">
         <AnimatePresence mode="wait">
           <Outlet />

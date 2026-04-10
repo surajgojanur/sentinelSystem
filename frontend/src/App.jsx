@@ -2,7 +2,6 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
-import RegisterPage from './pages/RegisterPage'
 import WelcomePage from './pages/WelcomePage'
 import ChatPage from './pages/ChatPage'
 import PrivateChatPage from './pages/PrivateChatPage'
@@ -12,6 +11,7 @@ import FaceAttendancePage from './pages/FaceAttendancePage'
 import FaceUnlockPage from './pages/FaceUnlockPage'
 import GhostModePage from './pages/GhostModePage'
 import AttackSimPage from './pages/AttackSimPage'
+import AdminCreateUserPage from './pages/AdminCreateUserPage'
 
 function ProtectedRoute({ children, adminOnly = false }) {
   const { user, loading } = useAuth()
@@ -33,11 +33,9 @@ function AppRoutes() {
   const { user } = useAuth()
   return (
     <Routes>
-      {/* Public routes — redirect to welcome if already logged in */}
       <Route path="/login" element={user ? <Navigate to="/welcome" replace /> : <LoginPage />} />
-      <Route path="/register" element={user ? <Navigate to="/welcome" replace /> : <RegisterPage />} />
+      <Route path="/register" element={<Navigate to="/login" replace />} />
 
-      {/* Welcome splash — shown right after login */}
       <Route path="/welcome" element={
         <ProtectedRoute>
           <WelcomePage />
@@ -49,12 +47,17 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
 
-      {/* App shell with sidebar */}
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Navigate to="/welcome" replace />} />
         <Route path="chat" element={<ChatPage />} />
         <Route path="messages" element={<PrivateChatPage />} />
         <Route path="attendance" element={<FaceAttendancePage />} />
+
+        <Route path="user-access" element={
+          <ProtectedRoute adminOnly>
+            <AdminCreateUserPage />
+          </ProtectedRoute>
+        } />
 
         <Route path="ghost-mode" element={
           <ProtectedRoute adminOnly>
