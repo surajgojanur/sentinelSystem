@@ -2,6 +2,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
 import {
+<<<<<<< HEAD
   MessageSquare,
   LayoutDashboard,
   LogOut,
@@ -15,6 +16,11 @@ import {
   KanbanSquare,
   AlertTriangle,
   UserPlus,
+=======
+  MessageSquare, LayoutDashboard,
+  LogOut, Shield, ChevronRight, Cpu, Database, ScanFace, UserPlus,
+  Briefcase, ClipboardList,
+>>>>>>> 77ae972 (register through admin page)
 } from 'lucide-react'
 
 const ROLE_COLORS = {

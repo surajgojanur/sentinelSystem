@@ -16,6 +16,8 @@ import MyWorkPage from './pages/MyWorkPage'
 import WorkBoardPage from './pages/WorkBoardPage'
 import WorkEscalationsPage from './pages/WorkEscalationsPage'
 import AdminCreateUserPage from './pages/AdminCreateUserPage'
+import WorkAssignmentsPage from './pages/WorkAssignmentsPage'
+import MyWorkPage from './pages/MyWorkPage'
 
 function ProtectedRoute({ children, adminOnly = false, managerOnly = false }) {
   const { user, loading } = useAuth()

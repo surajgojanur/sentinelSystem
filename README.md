@@ -95,7 +95,7 @@ Use the built-in demo users to tell a governance story end-to-end.
 
 **Backend:** Flask, Flask-SocketIO, SQLAlchemy, JWT.  
 **Frontend:** React + Vite + Tailwind.  
-**AI providers:** Gemini/OpenAI or mock fallback mode.
+**AI providers:** Ollama, Gemini, OpenAI, or mock fallback mode.
 
 > Diagram placeholder: add architecture image in `docs/architecture.md` and link here.
 
@@ -150,7 +150,7 @@ Local URLs:
 
 Notes:
 - Mock mode is the default local setup
-- No OpenAI or Gemini API key is required for local development
+- No OpenAI, Gemini, or Ollama cloud key is required for local development
 - Demo users are seeded automatically on first backend start
 
 ## Docker Setup
@@ -167,7 +167,7 @@ Notes:
 - Compose starts two services: `frontend` and `backend`
 - The frontend proxies `/api` and `/socket.io` to the backend service
 - Mock mode is the default Docker setup
-- No OpenAI or Gemini API key is required for default startup
+- OpenAI and Gemini are optional; Ollama can be used through `OLLAMA_BASE_URL`
 
 Useful commands:
 ```bash
@@ -193,13 +193,45 @@ Optional provider keys:
 ```env
 OPENAI_API_KEY=
 GEMINI_API_KEY=
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=llama3.2
+OLLAMA_TIMEOUT_SECONDS=60
 ```
 
 Provider notes:
 - `AI_PROVIDER=mock` keeps the app in demo mode with no external AI dependency
 - Set `AI_PROVIDER=openai` and provide `OPENAI_API_KEY` to use OpenAI
 - Set `AI_PROVIDER=gemini` and provide `GEMINI_API_KEY` to use Gemini
+- Set `AI_PROVIDER=ollama` to use a local Ollama model
 - If keys are missing, mock mode remains the simplest development path
+
+### Ollama setup
+Start Ollama and pull a model:
+
+```bash
+ollama serve
+ollama pull llama3.2
+```
+
+Update `backend/.env`:
+
+```env
+AI_PROVIDER=ollama
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=llama3.2
+OLLAMA_TIMEOUT_SECONDS=60
+```
+
+Then run the app as usual:
+
+```bash
+./run.sh
+```
+
+Notes:
+- The existing chat UI already posts to `/api/chat`, so no frontend wiring is needed for Ollama
+- In Docker on macOS, `compose.yaml` defaults `OLLAMA_BASE_URL` to `http://host.docker.internal:11434`
+- If chat returns an Ollama connection error, verify `ollama serve` is running and the model exists locally
 
 ## Data & Persistence
 - SQLite database: `backend/instance/secureai.db`

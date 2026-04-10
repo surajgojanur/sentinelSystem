@@ -11,6 +11,8 @@ import json
 import logging
 import os
 import re
+import urllib.error
+import urllib.request
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
@@ -70,6 +72,8 @@ def get_ai_response(messages: list[dict]) -> str:
         return _openai_response(messages)
     if provider == "gemini":
         return _gemini_response(messages)
+    if provider == "ollama":
+        return _ollama_response(messages)
     return _mock_response(messages)
 
 
@@ -485,6 +489,57 @@ def _gemini_response(messages: list[dict]) -> str:
     except Exception as exc:
         logger.error("Gemini error: %s", exc)
         return _fallback_error(str(exc))
+
+
+def _ollama_response(messages: list[dict]) -> str:
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+    model = os.getenv("OLLAMA_MODEL", "llama3.2")
+    timeout = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
+
+    payload = {
+        "model": model,
+        "stream": False,
+        "messages": [{"role": "system", "content": SYSTEM_PROMPT}] + messages,
+    }
+    request = urllib.request.Request(
+        f"{base_url}/api/chat",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            raw_body = response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        logger.error("Ollama HTTP error: %s %s", exc.code, detail)
+        return _fallback_error(f"Ollama HTTP {exc.code}: {detail[:120]}")
+    except urllib.error.URLError as exc:
+        logger.error("Ollama connection error: %s", exc)
+        return (
+            "I could not reach the Ollama server. "
+            "Make sure Ollama is running and that OLLAMA_BASE_URL points to it. "
+            f"Technical detail: {str(exc.reason)[:120]}"
+        )
+    except Exception as exc:
+        logger.error("Ollama error: %s", exc)
+        return _fallback_error(str(exc))
+
+    try:
+        parsed = json.loads(raw_body)
+    except json.JSONDecodeError as exc:
+        logger.error("Ollama invalid JSON: %s", exc)
+        return _fallback_error("Ollama returned invalid JSON")
+
+    content = (
+        parsed.get("message", {}).get("content")
+        or parsed.get("response")
+        or ""
+    ).strip()
+    if content:
+        return content
+    return _fallback_error("Ollama returned an empty response")
 
 
 def _mock_response(messages: list[dict]) -> str:
