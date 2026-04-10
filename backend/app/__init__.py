@@ -5,6 +5,7 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, join_room
 from dotenv import load_dotenv
 from sqlalchemy import inspect, text
+import datetime as _datetime
 import os
 import secrets
 import string
@@ -12,6 +13,9 @@ import sys
 from importlib import import_module
 
 load_dotenv()
+
+if not hasattr(_datetime, "UTC"):
+    _datetime.UTC = _datetime.timezone.utc
 
 db = SQLAlchemy()
 jwt = JWTManager()
