@@ -19,6 +19,7 @@ from typing import Any
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from app.services.gemini_service import GeminiServiceError, generate_text_response as _generate_gemini_text_response
 
 logger = logging.getLogger(__name__)
 
@@ -463,28 +464,17 @@ def _gemini_response(messages: list[dict]) -> str:
         return _mock_response(messages)
 
     try:
-        import google.generativeai as genai
-
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            system_instruction=SYSTEM_PROMPT,
-        )
-        history = []
-        last_user_msg = ""
-        for message in messages:
-            if message["role"] == "user":
-                last_user_msg = message["content"]
-                history.append({"role": "user", "parts": [message["content"]]})
-            elif message["role"] == "assistant":
-                history.append({"role": "model", "parts": [message["content"]]})
-
-        chat = model.start_chat(history=history[:-1] if history else [])
-        response = chat.send_message(last_user_msg)
-        return response.text.strip()
+        return generate_text_response(messages)
+    except GeminiServiceError as exc:
+        logger.warning("Gemini unavailable, falling back to mock response: %s", exc)
+        return _mock_response(messages)
     except Exception as exc:
         logger.error("Gemini error: %s", exc)
         return _fallback_error(str(exc))
+
+
+def generate_text_response(messages: list[dict]) -> str:
+    return _generate_gemini_text_response(messages, system_prompt=SYSTEM_PROMPT)
 
 
 def _mock_response(messages: list[dict]) -> str:
