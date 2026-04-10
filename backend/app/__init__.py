@@ -50,6 +50,7 @@ def create_app():
     from app.routes.attendance import attendance_bp
     from app.routes.work_management import work_management_bp
     from app.routes.roles import roles_bp
+    from app.routes.work_management import work_management_bp
     from ghost_routes import ghost_bp
     from attack_routes import attack_bp
 
@@ -62,6 +63,7 @@ def create_app():
     app.register_blueprint(attendance_bp, url_prefix="/api")
     app.register_blueprint(work_management_bp, url_prefix="/api")
     app.register_blueprint(roles_bp, url_prefix="/api")
+    app.register_blueprint(work_management_bp, url_prefix="/api")
     app.register_blueprint(ghost_bp, url_prefix="/api")
     app.register_blueprint(attack_bp, url_prefix="/api")
     # Socket events
