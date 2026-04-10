@@ -11,6 +11,12 @@ const STATUS_STYLES = {
   completed: 'text-success border-success/20 bg-success/10',
 }
 
+const RISK_STYLES = {
+  low: 'text-success border-success/20 bg-success/10',
+  medium: 'text-warn border-warn/20 bg-warn/10',
+  high: 'text-danger border-danger/20 bg-danger/10',
+}
+
 function formatNumber(value) {
   return Number(value || 0).toFixed(2).replace(/\.00$/, '')
 }
@@ -224,9 +230,14 @@ export default function WorkAssignmentsPage() {
                           Assigned to {item.assigned_to_user?.username} by {item.assigned_by_user?.username}
                         </p>
                       </div>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${STATUS_STYLES[item.status] || STATUS_STYLES.pending}`}>
-                        {item.status}
-                      </span>
+                      <div className="flex flex-col items-end gap-2">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${STATUS_STYLES[item.status] || STATUS_STYLES.pending}`}>
+                          {item.status}
+                        </span>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${RISK_STYLES[item.capacity_risk?.level] || RISK_STYLES.low}`}>
+                          risk: {item.capacity_risk?.level || 'low'}
+                        </span>
+                      </div>
                     </div>
 
                     {item.description && <p className="text-xs text-slate-400 mt-3 leading-relaxed">{item.description}</p>}
@@ -255,6 +266,19 @@ export default function WorkAssignmentsPage() {
                       <span>Due: {item.due_date ? format(new Date(item.due_date), 'MMM dd, yyyy') : 'Not set'}</span>
                       <span>Updates: {item.progress_updates?.length || 0}</span>
                     </div>
+
+                    {!!item.capacity_risk?.reasons?.length && (
+                      <div className="mt-4 rounded-xl border border-white/8 bg-bg-800/40 p-3">
+                        <p className="text-[10px] text-slate-500 font-mono uppercase tracking-wider mb-2">Capacity Risk Signals</p>
+                        <div className="space-y-1">
+                          {item.capacity_risk.reasons.map(reason => (
+                            <p key={reason} className="text-xs text-slate-300">
+                              {reason}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))
               )}
