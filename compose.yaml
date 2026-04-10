@@ -1,0 +1,32 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    environment:
+      PORT: 5001
+      DEBUG: 0
+      AI_PROVIDER: ${AI_PROVIDER:-mock}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-jwt-secret}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///secureai.db}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    ports:
+      - "5001:5001"
+    volumes:
+      - backend_instance:/app/instance
+      - backend_data:/app/app/data
+
+  frontend:
+    build:
+      context: ./frontend
+    depends_on:
+      - backend
+    environment:
+      VITE_PROXY_TARGET: http://backend:5001
+    ports:
+      - "3000:3000"
+
+volumes:
+  backend_instance:
+  backend_data:

@@ -1,0 +1,15 @@
+flask==3.0.3
+flask-cors==4.0.1
+flask-socketio==5.3.6
+flask-sqlalchemy==3.1.1
+flask-jwt-extended==4.6.0
+python-dotenv==1.0.1
+werkzeug==3.0.3
+simple-websocket==1.0.0
+eventlet==0.36.1
+openai==1.35.3
+google-generativeai==0.7.2
+scikit-learn==1.5.1
+numpy==1.26.4
+pypdf==5.4.0
+Pillow==10.4.0
