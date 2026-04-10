@@ -215,6 +215,47 @@ def test_cycle_prevention_blocks_invalid_reparenting(client, auth_headers, users
     assert "cycles" in cycle.get_json()["error"].lower()
 
 
+def test_assignment_update_success(client, auth_headers, users):
+    assignment = client.post(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "title": "Update Me",
+            "description": "old description",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 8,
+            "weight": 0.4,
+            "due_date": "2026-05-10",
+        },
+    ).get_json()["assignment"]
+
+    response = client.patch(
+        f"/api/work/assignments/{assignment['id']}",
+        headers=auth_headers("hr_jane", "hr123"),
+        json={
+            "title": "Updated Assignment",
+            "description": "new description",
+            "assigned_to_user_id": users["intern_amy"],
+            "expected_units": 12,
+            "weight": 0.7,
+            "due_date": "2026-05-20",
+            "github_issue_id": "GH-123",
+            "github_branch": "feature/work-update",
+        },
+    )
+
+    assert response.status_code == 200, response.get_json()
+    body = response.get_json()["assignment"]
+    assert body["title"] == "Updated Assignment"
+    assert body["description"] == "new description"
+    assert body["assigned_to_user_id"] == users["intern_amy"]
+    assert body["expected_units"] == 12
+    assert body["weight"] == 0.7
+    assert body["due_date"] == "2026-05-20"
+    assert body["github_issue_id"] == "GH-123"
+    assert body["github_branch"] == "feature/work-update"
+
+
 def test_parent_kpi_aggregates_from_descendants(client, auth_headers, users):
     parent = client.post(
         "/api/work/assignments",
@@ -294,6 +335,26 @@ def test_parent_delete_is_blocked_while_children_exist(client, auth_headers, use
     )
     assert response.status_code == 400
     assert "child assignments" in response.get_json()["error"]
+
+
+def test_leaf_delete_succeeds(client, auth_headers, users):
+    assignment = client.post(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "title": "Delete Leaf",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 3,
+            "weight": 0.5,
+        },
+    ).get_json()["assignment"]
+
+    response = client.delete(
+        f"/api/work/assignments/{assignment['id']}",
+        headers=auth_headers("admin", "admin123"),
+    )
+    assert response.status_code == 200
+    assert response.get_json()["message"] == "Assignment deleted"
 
 
 def test_admin_and_hr_can_create_assignment(client, auth_headers, users, app):
@@ -406,6 +467,74 @@ def test_assignee_list_is_scoped_and_kpi_is_aggregated(client, auth_headers, use
     assert assignment["kpi"]["weighted_score"] == pytest.approx(0.32)
 
 
+def test_list_assignments_query_filters(client, auth_headers, users):
+    parent = client.post(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "title": "Root Parent",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 10,
+            "weight": 0.5,
+        },
+    ).get_json()["assignment"]
+    child = client.post(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "title": "Nested Child",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 4,
+            "weight": 0.4,
+            "parent_id": parent["id"],
+        },
+    ).get_json()["assignment"]
+    draft = client.post(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "title": "Draft Assignment",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 2,
+            "weight": 0.2,
+            "status": "draft",
+        },
+    ).get_json()["assignment"]
+
+    root_only_response = client.get(
+        "/api/work/assignments?root_only=true",
+        headers=auth_headers("admin", "admin123"),
+    )
+    root_ids = {item["id"] for item in root_only_response.get_json()["assignments"]}
+    assert parent["id"] in root_ids
+    assert child["id"] not in root_ids
+
+    include_children_response = client.get(
+        "/api/work/assignments?root_only=true&include_children=1",
+        headers=auth_headers("admin", "admin123"),
+    )
+    included_parent = next(
+        item for item in include_children_response.get_json()["assignments"]
+        if item["id"] == parent["id"]
+    )
+    assert included_parent["children"][0]["id"] == child["id"]
+
+    intern_default = client.get(
+        "/api/work/assignments",
+        headers=auth_headers("intern_bob", "intern123"),
+    )
+    intern_titles = {item["title"] for item in intern_default.get_json()["assignments"]}
+    assert "Draft Assignment" not in intern_titles
+
+    intern_with_drafts = client.get(
+        "/api/work/assignments?include_drafts=true",
+        headers=auth_headers("intern_bob", "intern123"),
+    )
+    intern_with_draft_titles = {item["title"] for item in intern_with_drafts.get_json()["assignments"]}
+    assert "Draft Assignment" in intern_with_draft_titles
+    assert draft["id"] in {item["id"] for item in intern_with_drafts.get_json()["assignments"]}
+
+
 def test_assignee_can_submit_progress_and_status_transitions(client, auth_headers, users, app):
     assignment_id = _create_assignment(
         app,
@@ -449,6 +578,39 @@ def test_non_assignee_cannot_submit_progress(client, auth_headers, users, app):
 
     assert response.status_code == 403
     assert response.get_json()["error"] == "Only the assignee can submit progress"
+
+
+def test_parent_progress_submission_is_rejected(client, auth_headers, users):
+    parent = client.post(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "title": "Parent For Progress Rejection",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 10,
+            "weight": 0.6,
+        },
+    ).get_json()["assignment"]
+    client.post(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "title": "Child Leaf",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 5,
+            "weight": 0.5,
+            "parent_id": parent["id"],
+        },
+    )
+
+    response = client.post(
+        f"/api/work/assignments/{parent['id']}/progress",
+        headers=auth_headers("intern_bob", "intern123"),
+        json={"completed_units": 1},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "Progress can only be submitted to leaf assignments"
 
 
 def test_kpi_endpoint_returns_correct_values(client, auth_headers, users, app):
@@ -723,6 +885,40 @@ def test_manager_can_patch_assignment_status_and_board_preserves_blocked(client,
     assert invalid.status_code == 400
 
 
+def test_children_endpoint_returns_children_for_visible_assignment(client, auth_headers, users):
+    parent = client.post(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "title": "Children Endpoint Parent",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 5,
+            "weight": 0.5,
+        },
+    ).get_json()["assignment"]
+    child = client.post(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "title": "Children Endpoint Child",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 3,
+            "weight": 0.5,
+            "parent_id": parent["id"],
+        },
+    ).get_json()["assignment"]
+
+    response = client.get(
+        f"/api/work/assignments/{parent['id']}/children",
+        headers=auth_headers("intern_bob", "intern123"),
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["assignment"]["id"] == parent["id"]
+    assert body["count"] == 1
+    assert body["children"][0]["id"] == child["id"]
+
+
 def test_admin_or_hr_can_create_escalation(client, auth_headers, users, app):
     assignment_id = _create_assignment(
         app,
@@ -838,6 +1034,46 @@ def test_escalation_list_and_resolve_work_for_manager(client, auth_headers, user
     )
     assert resolve_response.status_code == 200
     assert resolve_response.get_json()["escalation"]["status"] == "resolved"
+
+
+def test_escalation_patch_rejects_invalid_status_and_already_resolved(client, auth_headers, users, app):
+    assignment_id = _create_assignment(
+        app,
+        assigned_by_user_id=users["admin"],
+        assigned_to_user_id=users["intern_bob"],
+        title="Escalation Patch Validation",
+        expected_units=9,
+    )
+
+    create_response = client.post(
+        "/api/work/escalations",
+        headers=auth_headers("admin", "admin123"),
+        json={"assignment_id": assignment_id, "reason": "Validation target"},
+    )
+    escalation_id = create_response.get_json()["escalation"]["id"]
+
+    invalid_status_response = client.patch(
+        f"/api/work/escalations/{escalation_id}",
+        headers=auth_headers("admin", "admin123"),
+        json={"status": "open"},
+    )
+    assert invalid_status_response.status_code == 400
+    assert invalid_status_response.get_json()["error"] == "Only resolution to 'resolved' is supported"
+
+    first_resolve = client.patch(
+        f"/api/work/escalations/{escalation_id}",
+        headers=auth_headers("admin", "admin123"),
+        json={"status": "resolved"},
+    )
+    assert first_resolve.status_code == 200
+
+    second_resolve = client.patch(
+        f"/api/work/escalations/{escalation_id}",
+        headers=auth_headers("admin", "admin123"),
+        json={"status": "resolved"},
+    )
+    assert second_resolve.status_code == 400
+    assert second_resolve.get_json()["error"] == "Escalation is already resolved"
 
 
 def test_escalation_suggestion_returns_normalized_contract(client, auth_headers, users, app, monkeypatch):
