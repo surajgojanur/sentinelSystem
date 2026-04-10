@@ -19,7 +19,17 @@ from typing import Any
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from app.services.gemini_service import GeminiServiceError, generate_text_response as _generate_gemini_text_response
+
+from .gemini_service import (
+    GeminiServiceError,
+    generate_json_response as generate_gemini_json_response,
+    generate_text_response,
+)
+from .ollama_service import (
+    OllamaServiceError,
+    generate_json as generate_ollama_json,
+    generate_text as generate_ollama_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +81,34 @@ def get_ai_response(messages: list[dict]) -> str:
         return _openai_response(messages)
     if provider == "gemini":
         return _gemini_response(messages)
+    if provider == "ollama":
+        return _ollama_response(messages)
     return _mock_response(messages)
+
+
+def get_ai_json_response(
+    prompt: str,
+    *,
+    system_prompt: str | None = None,
+    temperature: float = 0.2,
+    max_output_tokens: int = 900,
+) -> dict[str, Any]:
+    provider = os.getenv("AI_PROVIDER", "gemini").lower()
+
+    if provider == "gemini":
+        return generate_gemini_json_response(
+            prompt,
+            system_prompt=system_prompt or SYSTEM_PROMPT,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
+    if provider == "ollama":
+        full_prompt = prompt
+        if system_prompt:
+            full_prompt = f"{system_prompt.strip()}\n\n{prompt.strip()}"
+        return generate_ollama_json(full_prompt)
+
+    raise ValueError(f"Structured AI provider is not configured: {provider}")
 
 
 def list_mock_questions(role: str | None = None) -> list[dict]:
@@ -459,22 +496,45 @@ def _openai_response(messages: list[dict]) -> str:
 
 
 def _gemini_response(messages: list[dict]) -> str:
-    api_key = os.getenv("GEMINI_API_KEY", "")
-    if not api_key or api_key.startswith("your-"):
-        return _mock_response(messages)
-
     try:
-        return generate_text_response(messages)
+        return generate_text_response(
+            messages,
+            system_prompt=SYSTEM_PROMPT,
+            temperature=0.7,
+            max_output_tokens=800,
+        )
     except GeminiServiceError as exc:
-        logger.warning("Gemini unavailable, falling back to mock response: %s", exc)
+        logger.error("Gemini error; using mock fallback: %s", exc)
         return _mock_response(messages)
-    except Exception as exc:
-        logger.error("Gemini error: %s", exc)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Unexpected Gemini error: %s", exc)
         return _fallback_error(str(exc))
 
 
-def generate_text_response(messages: list[dict]) -> str:
-    return _generate_gemini_text_response(messages, system_prompt=SYSTEM_PROMPT)
+def _ollama_response(messages: list[dict]) -> str:
+    try:
+        return generate_ollama_text(_messages_to_prompt(messages))
+    except OllamaServiceError as exc:
+        logger.error("Ollama error; using mock fallback: %s", exc)
+        return _mock_response(messages)
+    except Exception as exc:
+        logger.error("Unexpected Ollama error: %s", exc)
+        return _fallback_error(str(exc))
+
+
+def _messages_to_prompt(messages: list[dict]) -> str:
+    lines = [SYSTEM_PROMPT, ""]
+    for message in messages:
+        role = str(message.get("role", "user")).strip().lower()
+        content = str(message.get("content", "")).strip()
+        if not content:
+            continue
+        if role == "assistant":
+            lines.append(f"Assistant: {content}")
+        else:
+            lines.append(f"User: {content}")
+    lines.append("Assistant:")
+    return "\n".join(lines).strip()
 
 
 def _mock_response(messages: list[dict]) -> str:
