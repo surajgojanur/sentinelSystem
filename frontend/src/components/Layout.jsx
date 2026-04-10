@@ -16,12 +16,7 @@ import {
   AlertTriangle,
   UserPlus,
 } from 'lucide-react'
-
-const ROLE_COLORS = {
-  admin: 'text-purple-400 bg-purple-400/10 border-purple-400/20',
-  hr: 'text-warn bg-warn/10 border-warn/20',
-  intern: 'text-accent bg-accent/10 border-accent/20',
-}
+import { getRoleMeta, getRolePillClass, isManagerRole } from '../utils/roles'
 
 const ROLE_BADGE = {
   admin: '⬡ ADMIN',
@@ -32,13 +27,14 @@ const ROLE_BADGE = {
 export default function Layout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const roleMeta = getRoleMeta(user?.role)
 
   const navItems = [
     { to: '/chat', icon: Cpu, label: 'AI Chatbot', desc: 'Governed AI' },
     { to: '/messages', icon: MessageSquare, label: 'Secure Msg', desc: 'Private comms' },
     { to: '/attendance', icon: ScanFace, label: 'Attendance', desc: 'Face check-in/out' },
     { to: '/my-work', icon: Briefcase, label: 'My Work', desc: 'Assigned tasks' },
-    ...(['admin', 'hr'].includes(user?.role)
+    ...(isManagerRole(user?.role)
       ? [
           { to: '/work-assignments', icon: ClipboardList, label: 'Work Assign', desc: 'Manager workspace' },
           { to: '/work-board', icon: KanbanSquare, label: 'Work Board', desc: 'Kanban status view' },
@@ -91,8 +87,8 @@ export default function Layout() {
               </div>
             </div>
             <div className="mt-2">
-              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${ROLE_COLORS[user?.role] || 'text-slate-300 bg-white/5 border-white/10'}`}>
-                {ROLE_BADGE[user?.role] || user?.role?.toUpperCase()}
+              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${getRolePillClass(user?.role)}`}>
+                {roleMeta.badge}
               </span>
             </div>
           </div>

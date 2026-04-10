@@ -261,7 +261,7 @@ def _write_audit_log(user: User, query: str):
 def create_assignment():
     actor = _current_user()
     if not _is_admin_or_hr(actor):
-        return jsonify({"error": "Admin/HR access required"}), 403
+        return jsonify({"error": "Manager access required"}), 403
 
     data = request.get_json() or {}
     title = (data.get("title") or "").strip()
@@ -390,7 +390,7 @@ def list_assignments():
 def get_work_board():
     actor = _current_user()
     if not _is_admin_or_hr(actor):
-        return jsonify({"error": "Admin/HR access required"}), 403
+        return jsonify({"error": "Manager access required"}), 403
 
     assignments = (
         _assignment_query(actor, include_drafts=True, root_only=True).all()
@@ -467,7 +467,7 @@ def submit_progress_update(assignment_id):
 def update_assignment_status(assignment_id):
     actor = _current_user()
     if not _is_admin_or_hr(actor):
-        return jsonify({"error": "Admin/HR access required"}), 403
+        return jsonify({"error": "Manager access required"}), 403
 
     assignment = _load_assignment_for_update(assignment_id)
     if not assignment:
@@ -497,7 +497,7 @@ def update_assignment_status(assignment_id):
 def update_assignment(assignment_id):
     actor = _current_user()
     if not _is_admin_or_hr(actor):
-        return jsonify({"error": "Admin/HR access required"}), 403
+        return jsonify({"error": "Manager access required"}), 403
 
     assignment = _load_assignment_for_update(assignment_id)
     if not assignment:
@@ -586,7 +586,7 @@ def update_assignment(assignment_id):
 def delete_assignment(assignment_id):
     actor = _current_user()
     if not _is_admin_or_hr(actor):
-        return jsonify({"error": "Admin/HR access required"}), 403
+        return jsonify({"error": "Manager access required"}), 403
 
     assignment = _load_assignment_for_update(assignment_id)
     if not assignment:
@@ -647,7 +647,7 @@ def get_assignment_tree(assignment_id):
 def create_work_escalation():
     actor = _current_user()
     if not _is_admin_or_hr(actor):
-        return jsonify({"error": "Admin/HR access required"}), 403
+        return jsonify({"error": "Manager access required"}), 403
 
     data = request.get_json() or {}
     assignment_id = data.get("assignment_id")
@@ -693,7 +693,7 @@ def create_work_escalation():
 def list_work_escalations():
     actor = _current_user()
     if not _is_admin_or_hr(actor):
-        return jsonify({"error": "Admin/HR access required"}), 403
+        return jsonify({"error": "Manager access required"}), 403
 
     escalations = (
         WorkEscalation.query
@@ -713,7 +713,7 @@ def list_work_escalations():
 def update_work_escalation(escalation_id):
     actor = _current_user()
     if not _is_admin_or_hr(actor):
-        return jsonify({"error": "Admin/HR access required"}), 403
+        return jsonify({"error": "Manager access required"}), 403
 
     escalation = (
         WorkEscalation.query

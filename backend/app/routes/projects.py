@@ -37,7 +37,7 @@ def _serialize_project(project: Project):
 def list_projects():
     actor = _require_manager()
     if not actor:
-        return jsonify({"error": "Admin/HR access required"}), 403
+        return jsonify({"error": "Manager access required"}), 403
 
     include_archived = request.args.get("include_archived", "true").strip().lower() != "false"
     query = Project.query.order_by(Project.is_archived.asc(), Project.updated_at.desc())
@@ -56,7 +56,7 @@ def list_projects():
 def create_project():
     actor = _require_manager()
     if not actor:
-        return jsonify({"error": "Admin/HR access required"}), 403
+        return jsonify({"error": "Manager access required"}), 403
 
     data = request.get_json() or {}
     name = (data.get("name") or "").strip()
@@ -81,7 +81,7 @@ def create_project():
 def update_project(project_id):
     actor = _require_manager()
     if not actor:
-        return jsonify({"error": "Admin/HR access required"}), 403
+        return jsonify({"error": "Manager access required"}), 403
 
     project = _get_project(project_id)
     if not project:
@@ -112,7 +112,7 @@ def update_project(project_id):
 def add_project_member(project_id):
     actor = _require_manager()
     if not actor:
-        return jsonify({"error": "Admin/HR access required"}), 403
+        return jsonify({"error": "Manager access required"}), 403
 
     project = _get_project(project_id)
     if not project:
@@ -150,7 +150,7 @@ def add_project_member(project_id):
 def remove_project_member(project_id, user_id):
     actor = _require_manager()
     if not actor:
-        return jsonify({"error": "Admin/HR access required"}), 403
+        return jsonify({"error": "Manager access required"}), 403
 
     project = _get_project(project_id)
     if not project:

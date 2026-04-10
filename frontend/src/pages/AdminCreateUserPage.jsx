@@ -3,13 +3,13 @@ import { motion } from 'framer-motion'
 import { AlertCircle, Camera, CheckCircle2, KeyRound, ScanFace, Search, UserPlus, XCircle } from 'lucide-react'
 
 import api from '../utils/api'
-
-const FALLBACK_ROLES = ['Admin', 'HR', 'Intern', 'Developer', 'Manager', 'Team Lead', 'Finance', 'Analyst', 'Security']
+import { FALLBACK_ROLE_NAMES, getRoleMeta, groupRoles, isManagerRole } from '../utils/roles'
 
 export default function AdminCreateUserPage() {
-  const [roles, setRoles] = useState(FALLBACK_ROLES)
+  const [roles, setRoles] = useState(FALLBACK_ROLE_NAMES)
   const [form, setForm] = useState({ username: '', role: 'intern' })
   const [checkForm, setCheckForm] = useState({ username: '', login_code: '' })
+  const [roleSearch, setRoleSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [checkLoading, setCheckLoading] = useState(false)
   const [rolesLoading, setRolesLoading] = useState(true)
@@ -24,6 +24,15 @@ export default function AdminCreateUserPage() {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
+  const matchingRoles = roles.filter(role => {
+    const needle = roleSearch.trim().toLowerCase()
+    if (!needle) return true
+    const meta = getRoleMeta(role.toLowerCase())
+    return `${role} ${meta.category} ${meta.desc}`.toLowerCase().includes(needle)
+  })
+  const filteredRoles = matchingRoles.length ? matchingRoles : roles
+  const groupedRoles = groupRoles(filteredRoles)
+  const selectedRoleMeta = getRoleMeta(form.role)
 
   useEffect(() => {
     let active = true
@@ -185,6 +194,17 @@ export default function AdminCreateUserPage() {
                 </div>
 
                 <div>
+                  <label className="block text-xs font-mono text-slate-500 uppercase tracking-wider mb-1.5">Find Role</label>
+                  <div className="relative mb-2">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" />
+                    <input
+                      type="text"
+                      value={roleSearch}
+                      onChange={e => setRoleSearch(e.target.value)}
+                      className="w-full pl-9 pr-4 py-3 rounded-xl bg-bg-800 border border-white/8 text-white placeholder-slate-600 focus:outline-none focus:border-accent/50 transition-all text-sm"
+                      placeholder="Search roles like developer, finance, manager..."
+                    />
+                  </div>
                   <label className="block text-xs font-mono text-slate-500 uppercase tracking-wider mb-1.5">Role</label>
                   <select
                     value={form.role}
@@ -192,11 +212,47 @@ export default function AdminCreateUserPage() {
                     disabled={rolesLoading}
                     className="w-full px-4 py-3 rounded-xl bg-bg-800 border border-white/8 text-white focus:outline-none focus:border-accent/50 transition-all text-sm disabled:opacity-60"
                   >
-                    {roles.map(role => (
-                      <option key={role} value={role.toLowerCase()}>{role}</option>
+                    {Object.entries(groupedRoles).map(([category, categoryRoles]) => (
+                      <optgroup key={category} label={category}>
+                        {categoryRoles.map(role => (
+                          <option key={role} value={role.toLowerCase()}>{role}</option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                 </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/8 bg-white/5 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-white">Registration Summary</p>
+                    <p className="text-xs text-slate-500">Quick preview before you issue the account.</p>
+                  </div>
+                  <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-mono border ${
+                    selectedRoleMeta.value === 'admin' ? 'text-purple-400 border-purple-400/20 bg-purple-400/10' :
+                    selectedRoleMeta.value === 'hr' ? 'text-warn border-warn/20 bg-warn/10' :
+                    selectedRoleMeta.value === 'intern' ? 'text-accent border-accent/20 bg-accent/10' :
+                    'text-slate-300 border-white/10 bg-white/5'
+                  }`}>
+                    {selectedRoleMeta.badge}
+                  </span>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3 mt-4 text-sm">
+                  <div className="rounded-xl bg-bg-900/40 border border-white/8 p-3">
+                    <p className="text-[10px] text-slate-500 font-mono uppercase tracking-wider">Role Family</p>
+                    <p className="text-white mt-1">{selectedRoleMeta.category}</p>
+                  </div>
+                  <div className="rounded-xl bg-bg-900/40 border border-white/8 p-3">
+                    <p className="text-[10px] text-slate-500 font-mono uppercase tracking-wider">Access Type</p>
+                    <p className="text-white mt-1">{isManagerRole(form.role) ? 'Manager Workspace' : 'Standard Workspace'}</p>
+                  </div>
+                  <div className="rounded-xl bg-bg-900/40 border border-white/8 p-3">
+                    <p className="text-[10px] text-slate-500 font-mono uppercase tracking-wider">Generated Email</p>
+                    <p className="text-white mt-1 break-all">{form.username ? `${form.username}@secureai.local` : 'username@secureai.local'}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 mt-3">{selectedRoleMeta.desc}</p>
               </div>
 
               <div className="rounded-2xl border border-white/8 bg-bg-800/60 p-4">

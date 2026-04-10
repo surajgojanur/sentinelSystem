@@ -5,12 +5,11 @@ import { useAuth } from '../context/AuthContext'
 import { Shield, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../utils/api'
-
-const FALLBACK_ROLES = ['Admin', 'HR', 'Intern', 'Developer', 'Manager', 'Team Lead', 'Finance', 'Analyst', 'Security']
+import { FALLBACK_ROLE_NAMES } from '../utils/roles'
 
 export default function RegisterPage() {
   const { register } = useAuth()
-  const [roles, setRoles] = useState(FALLBACK_ROLES)
+  const [roles, setRoles] = useState(FALLBACK_ROLE_NAMES)
   const [form, setForm] = useState({ username: '', email: '', password: '', role: 'intern' })
   const [loading, setLoading] = useState(false)
   const [rolesLoading, setRolesLoading] = useState(true)
@@ -36,7 +35,7 @@ export default function RegisterPage() {
       })
       .catch(() => {
         if (active) {
-          setRoles(FALLBACK_ROLES)
+          setRoles(FALLBACK_ROLE_NAMES)
         }
       })
       .finally(() => {

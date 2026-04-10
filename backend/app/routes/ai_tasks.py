@@ -80,7 +80,7 @@ def _serialize_task(task: WorkAssignment):
 def generate_ai_tasks(project_id):
     actor = _require_manager()
     if not actor:
-        return jsonify({"error": "Admin/HR access required"}), 403
+        return jsonify({"error": "Manager access required"}), 403
 
     project, error_response = _get_project_or_404(project_id)
     if error_response:
@@ -159,7 +159,7 @@ def generate_ai_tasks(project_id):
 def list_pending_ai_tasks(project_id):
     actor = _require_manager()
     if not actor:
-        return jsonify({"error": "Admin/HR access required"}), 403
+        return jsonify({"error": "Manager access required"}), 403
 
     project, error_response = _get_project_or_404(project_id)
     if error_response:
@@ -184,7 +184,7 @@ def list_pending_ai_tasks(project_id):
 def approve_ai_tasks(project_id):
     actor = _require_manager()
     if not actor:
-        return jsonify({"error": "Admin/HR access required"}), 403
+        return jsonify({"error": "Manager access required"}), 403
 
     project, error_response = _get_project_or_404(project_id)
     if error_response:

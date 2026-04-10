@@ -233,6 +233,15 @@ def test_users_endpoint_contract(client, auth_headers):
     assert all(user["username"] != "admin" for user in body["users"])
 
 
+def test_roles_endpoint_includes_expanded_role_catalog(client):
+    response = client.get("/api/roles")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    role_names = {role["name"] for role in body["roles"]}
+    assert {"Admin", "HR", "Developer", "Project Manager", "DevOps Engineer", "Recruiter"} <= role_names
+
+
 def test_list_assignments_endpoint_contract(client, auth_headers, users, app):
     assignment_id = _create_assignment(
         app,

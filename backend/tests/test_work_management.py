@@ -3,9 +3,12 @@ from datetime import UTC, datetime, timedelta
 from app import db
 from app.models.attendance_record import AttendanceRecord
 from app.models.audit_log import AuditLog
+from app.models.role import Role
+from app.models.user import User
 from app.models import WorkAssignment, WorkEscalation, WorkProgressUpdate
 import pytest
 from sqlalchemy import text
+from werkzeug.security import generate_password_hash
 
 
 def _create_assignment(app, **overrides):
@@ -323,6 +326,35 @@ def test_admin_and_hr_can_create_assignment(client, auth_headers, users, app):
         assert "Created work assignment" in audit_queries[1]
 
 
+def test_manager_role_can_create_assignment(client, auth_headers, users, app):
+    with app.app_context():
+        role = Role.query.filter_by(name="Manager").first()
+        manager = User(
+            username="manager_mia",
+            email="manager@secureai.com",
+            password_hash=generate_password_hash("manager123"),
+            role="manager",
+            role_id=role.id if role else None,
+            login_code="MANAGER001",
+        )
+        db.session.add(manager)
+        db.session.commit()
+
+    response = client.post(
+        "/api/work/assignments",
+        headers=auth_headers("manager_mia", "manager123"),
+        json={
+            "title": "Assignment from manager",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 12,
+            "weight": 0.5,
+        },
+    )
+
+    assert response.status_code == 201, response.get_json()
+    assert response.get_json()["assignment"]["title"] == "Assignment from manager"
+
+
 def test_non_privileged_user_cannot_create_assignment(client, auth_headers, users):
     response = client.post(
         "/api/work/assignments",
@@ -335,7 +367,7 @@ def test_non_privileged_user_cannot_create_assignment(client, auth_headers, user
         },
     )
     assert response.status_code == 403
-    assert response.get_json()["error"] == "Admin/HR access required"
+    assert response.get_json()["error"] == "Manager access required"
 
 
 def test_assignee_list_is_scoped_and_kpi_is_aggregated(client, auth_headers, users, app):
@@ -746,7 +778,7 @@ def test_non_manager_cannot_create_escalation(client, auth_headers, users, app):
     )
 
     assert response.status_code == 403
-    assert response.get_json()["error"] == "Admin/HR access required"
+    assert response.get_json()["error"] == "Manager access required"
 
 
 def test_duplicate_open_escalation_is_rejected(client, auth_headers, users, app):
