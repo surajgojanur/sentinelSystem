@@ -21,20 +21,8 @@ export function AuthProvider({ children }) {
     }
   }, [token])
 
-  const login = useCallback(async (username, password) => {
-    const res = await api.post('/auth/login', { username, password })
-    const { token: t, user: u } = res.data
-    localStorage.setItem('token', t)
-    sessionStorage.removeItem('face_verified')
-    api.defaults.headers.common['Authorization'] = `Bearer ${t}`
-    setToken(t)
-    setUser(u)
-    setFaceVerified(false)
-    return u
-  }, [])
-
-  const register = useCallback(async (data) => {
-    const res = await api.post('/auth/register', data)
+  const login = useCallback(async (username, loginCode) => {
+    const res = await api.post('/auth/login', { username, login_code: loginCode })
     const { token: t, user: u } = res.data
     localStorage.setItem('token', t)
     sessionStorage.removeItem('face_verified')
@@ -60,7 +48,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, faceVerified, markFaceVerified, login, register, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, faceVerified, markFaceVerified, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

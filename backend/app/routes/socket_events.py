@@ -13,7 +13,7 @@ def _get_user_from_token(token: str):
     try:
         decoded = decode_token(token)
         user_id = int(decoded["sub"])
-        return User.query.get(user_id)
+        return db.session.get(User, user_id)
     except Exception:
         return None
 

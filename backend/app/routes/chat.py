@@ -1,7 +1,7 @@
 import csv
 import io
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 from flask import Blueprint, request, jsonify, make_response
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -44,7 +44,7 @@ _histories: dict = {}
 
 def _get_user() -> User | None:
     user_id = int(get_jwt_identity())
-    return User.query.get(user_id)
+    return db.session.get(User, user_id)
 
 
 def _require_admin() -> User | None:
@@ -89,7 +89,7 @@ def chat():
             and not user.is_suspicious
         ):
             user.is_suspicious = True
-            user.flagged_at = datetime.utcnow()
+            user.flagged_at = datetime.now(UTC)
 
     # ── Ghost Mode auto-feed ─────────────────────────────────────────────
     if result.is_high_risk_alert or result.risk_level in ("high", "medium"):

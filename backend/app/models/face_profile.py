@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 import numpy as np
 
@@ -14,8 +14,8 @@ class FaceProfile(db.Model):
     embedding = db.Column(db.Text, nullable=False)
     embedding_dim = db.Column(db.Integer, nullable=False)
     sample_hash = db.Column(db.String(64), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
     user = db.relationship("User", backref=db.backref("face_profile", uselist=False))
 

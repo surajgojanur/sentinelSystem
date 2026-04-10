@@ -373,11 +373,10 @@ export default function QuestionBankPage() {
                           ? prev.allowed_roles.filter(item => item !== role)
                           : [...prev.allowed_roles, role],
                       }))}
-                      className={`px-3 py-2 rounded-xl text-xs border ${
-                        form.allowed_roles.includes(role)
+                      className={`px-3 py-2 rounded-xl text-xs border ${form.allowed_roles.includes(role)
                           ? 'bg-accent/10 border-accent/30 text-accent'
                           : 'bg-white/5 border-white/8 text-slate-300'
-                      }`}
+                        }`}
                     >
                       {role}
                     </button>

@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
-from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.security import check_password_hash
+
 from app import db
 from app.models.user import User
 from app.services.face_attendance import match_face
@@ -10,45 +11,26 @@ auth_bp = Blueprint("auth", __name__)
 
 @auth_bp.route("/register", methods=["POST"])
 def register():
-    data = request.get_json()
-    username = data.get("username", "").strip()
-    email = data.get("email", "").strip()
-    password = data.get("password", "")
-    role = data.get("role", "intern")
-
-    if not username or not email or not password:
-        return jsonify({"error": "All fields are required"}), 400
-
-    if role not in ("admin", "hr", "intern"):
-        role = "intern"
-
-    if User.query.filter_by(username=username).first():
-        return jsonify({"error": "Username already taken"}), 409
-
-    if User.query.filter_by(email=email).first():
-        return jsonify({"error": "Email already registered"}), 409
-
-    user = User(
-        username=username,
-        email=email,
-        password_hash=generate_password_hash(password),
-        role=role,
-    )
-    db.session.add(user)
-    db.session.commit()
-
-    token = create_access_token(identity=str(user.id))
-    return jsonify({"token": token, "user": user.to_dict()}), 201
+    return jsonify({"error": "Public registration is disabled. Contact an admin to create your account."}), 403
 
 
 @auth_bp.route("/login", methods=["POST"])
 def login():
-    data = request.get_json()
+    data = request.get_json() or {}
     username = data.get("username", "").strip()
+    login_code = data.get("login_code", "").strip()
     password = data.get("password", "")
 
+    if not username or not (login_code or password):
+        return jsonify({"error": "Username and login code or password are required"}), 400
+
     user = User.query.filter_by(username=username).first()
-    if not user or not check_password_hash(user.password_hash, password):
+    if not user:
+        return jsonify({"error": "Invalid credentials"}), 401
+
+    login_code_matches = bool(login_code) and user.login_code == login_code
+    password_matches = bool(password) and check_password_hash(user.password_hash, password)
+    if not (login_code_matches or password_matches):
         return jsonify({"error": "Invalid credentials"}), 401
 
     token = create_access_token(identity=str(user.id))
@@ -59,7 +41,7 @@ def login():
 @jwt_required()
 def me():
     user_id = int(get_jwt_identity())
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
     return jsonify({"user": user.to_dict()}), 200
@@ -69,7 +51,7 @@ def me():
 @jwt_required()
 def face_verify():
     user_id = int(get_jwt_identity())
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
 

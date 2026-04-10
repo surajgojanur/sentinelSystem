@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from app import db
 
@@ -11,7 +11,7 @@ class WorkProgressUpdate(db.Model):
     reported_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     completed_units = db.Column(db.Float, nullable=False, default=0)
     note = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
     reported_by = db.relationship("User", backref=db.backref("work_progress_updates", lazy=True))
 

@@ -7,7 +7,9 @@ import api from '../utils/api'
 
 const STATUS_STYLES = {
   pending: 'text-warn border-warn/20 bg-warn/10',
+  todo: 'text-warn border-warn/20 bg-warn/10',
   in_progress: 'text-accent border-accent/20 bg-accent/10',
+  blocked: 'text-danger border-danger/20 bg-danger/10',
   completed: 'text-success border-success/20 bg-success/10',
 }
 
