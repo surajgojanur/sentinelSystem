@@ -11,6 +11,8 @@ import string
 import sys
 from importlib import import_module
 
+from app.services.roles import ROLE_CATALOG, normalize_role_name
+
 load_dotenv()
 
 db = SQLAlchemy()
@@ -60,6 +62,8 @@ def create_app():
     from app.routes.attendance import attendance_bp
     from app.routes.work_management import work_management_bp
     from app.routes.roles import roles_bp
+    from app.routes.projects import projects_bp
+    from app.routes.ai_tasks import ai_tasks_bp
     from app.ghost_routes import ghost_bp
     from app.attack_routes import attack_bp
 
@@ -72,6 +76,8 @@ def create_app():
     app.register_blueprint(attendance_bp, url_prefix="/api")
     app.register_blueprint(work_management_bp, url_prefix="/api")
     app.register_blueprint(roles_bp, url_prefix="/api")
+    app.register_blueprint(projects_bp, url_prefix="/api")
+    app.register_blueprint(ai_tasks_bp, url_prefix="/api")
     app.register_blueprint(ghost_bp, url_prefix="/api")
     app.register_blueprint(attack_bp, url_prefix="/api")
 
@@ -94,6 +100,7 @@ def create_app():
     with app.app_context():
         db.create_all()
         _ensure_work_escalation_columns()
+        _ensure_work_assignment_columns()
         _ensure_user_schema()
         _seed_roles()
         _seed_demo_users()
@@ -101,13 +108,6 @@ def create_app():
         _ensure_user_login_codes()
 
     return app
-
-
-def _normalize_role_name(value: str) -> str:
-    normalized = (value or "").strip().lower()
-    if normalized == "hr":
-        return "HR"
-    return normalized.title()
 
 
 def _generate_login_code(length: int = 10) -> str:
@@ -133,19 +133,8 @@ def _ensure_user_schema():
 def _seed_roles():
     from app.models.role import Role
 
-    role_names = [
-        "Admin",
-        "HR",
-        "Intern",
-        "Developer",
-        "Manager",
-        "Team Lead",
-        "Finance",
-        "Analyst",
-        "Security",
-    ]
     existing = {role.name for role in Role.query.all()}
-    for name in role_names:
+    for name in ROLE_CATALOG:
         if name not in existing:
             db.session.add(Role(name=name))
     db.session.commit()
@@ -164,7 +153,7 @@ def _seed_demo_users():
 
     for u in demo_users:
         existing_user = User.query.filter_by(username=u["username"]).first()
-        role = Role.query.filter_by(name=_normalize_role_name(u["role"])).first()
+        role = Role.query.filter_by(name=normalize_role_name(u["role"])).first()
         if not existing_user:
             user = User(
                 username=u["username"],
@@ -191,6 +180,28 @@ def _ensure_work_escalation_columns():
     if "status" not in columns:
         db.session.execute(text("ALTER TABLE work_escalations ADD COLUMN status VARCHAR(20) DEFAULT 'open'"))
         db.session.execute(text("UPDATE work_escalations SET status = 'open' WHERE status IS NULL"))
+        db.session.commit()
+
+
+def _ensure_work_assignment_columns():
+    inspector = inspect(db.engine)
+    if not inspector.has_table("work_assignments"):
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("work_assignments")}
+    statements = []
+    if "project_id" not in columns:
+        statements.append("ALTER TABLE work_assignments ADD COLUMN project_id INTEGER")
+    if "parent_id" not in columns:
+        statements.append("ALTER TABLE work_assignments ADD COLUMN parent_id INTEGER")
+    if "github_issue_id" not in columns:
+        statements.append("ALTER TABLE work_assignments ADD COLUMN github_issue_id VARCHAR(255)")
+    if "github_branch" not in columns:
+        statements.append("ALTER TABLE work_assignments ADD COLUMN github_branch VARCHAR(255)")
+
+    for statement in statements:
+        db.session.execute(text(statement))
+    if statements:
         db.session.commit()
 
 

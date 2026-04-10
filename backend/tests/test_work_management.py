@@ -71,6 +71,228 @@ def test_assignment_model_defaults(app, users):
         assert assignment.expected_units == 10
 
 
+def test_parent_child_creation_and_tree_fetch(client, auth_headers, users, app):
+    parent_response = client.post(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "title": "Parent Assignment",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 10,
+            "weight": 0.5,
+        },
+    )
+    parent_id = parent_response.get_json()["assignment"]["id"]
+
+    child_response = client.post(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "title": "Child Assignment",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 4,
+            "weight": 0.4,
+            "parent_id": parent_id,
+        },
+    )
+    assert child_response.status_code == 201, child_response.get_json()
+    child = child_response.get_json()["assignment"]
+    assert child["parent_id"] == parent_id
+
+    tree_response = client.get(
+        f"/api/work/assignments/{parent_id}/tree",
+        headers=auth_headers("admin", "admin123"),
+    )
+    assert tree_response.status_code == 200
+    tree = tree_response.get_json()["assignment"]
+    assert tree["child_count"] == 1
+    assert tree["children"][0]["id"] == child["id"]
+
+
+def test_parent_completion_is_derived_from_descendants(client, auth_headers, users):
+    parent = client.post(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "title": "Derived Parent",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 10,
+            "weight": 0.6,
+        },
+    ).get_json()["assignment"]
+    first_child = client.post(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "title": "Leaf 1",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 4,
+            "weight": 0.4,
+            "parent_id": parent["id"],
+        },
+    ).get_json()["assignment"]
+    second_child = client.post(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "title": "Leaf 2",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 6,
+            "weight": 0.4,
+            "parent_id": parent["id"],
+        },
+    ).get_json()["assignment"]
+
+    patch_parent = client.patch(
+        f"/api/work/assignments/{parent['id']}/status",
+        headers=auth_headers("admin", "admin123"),
+        json={"status": "completed"},
+    )
+    assert patch_parent.status_code == 400
+
+    client.post(
+        f"/api/work/assignments/{first_child['id']}/progress",
+        headers=auth_headers("intern_bob", "intern123"),
+        json={"completed_units": 4},
+    )
+    mid_tree = client.get(
+        f"/api/work/assignments/{parent['id']}/tree",
+        headers=auth_headers("admin", "admin123"),
+    ).get_json()["assignment"]
+    assert mid_tree["status"] == "in_progress"
+
+    client.post(
+        f"/api/work/assignments/{second_child['id']}/progress",
+        headers=auth_headers("intern_bob", "intern123"),
+        json={"completed_units": 6},
+    )
+    final_tree = client.get(
+        f"/api/work/assignments/{parent['id']}/tree",
+        headers=auth_headers("admin", "admin123"),
+    ).get_json()["assignment"]
+    assert final_tree["status"] == "completed"
+
+
+def test_cycle_prevention_blocks_invalid_reparenting(client, auth_headers, users):
+    parent = client.post(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "title": "Cycle Parent",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 5,
+            "weight": 0.5,
+        },
+    ).get_json()["assignment"]
+    child = client.post(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "title": "Cycle Child",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 5,
+            "weight": 0.5,
+            "parent_id": parent["id"],
+        },
+    ).get_json()["assignment"]
+
+    self_parent = client.patch(
+        f"/api/work/assignments/{parent['id']}",
+        headers=auth_headers("admin", "admin123"),
+        json={"parent_id": parent["id"]},
+    )
+    assert self_parent.status_code == 400
+
+    cycle = client.patch(
+        f"/api/work/assignments/{parent['id']}",
+        headers=auth_headers("admin", "admin123"),
+        json={"parent_id": child["id"]},
+    )
+    assert cycle.status_code == 400
+    assert "cycles" in cycle.get_json()["error"].lower()
+
+
+def test_parent_kpi_aggregates_from_descendants(client, auth_headers, users):
+    parent = client.post(
+        "/api/work/assignments",
+        headers=auth_headers("hr_jane", "hr123"),
+        json={
+            "title": "Aggregate Parent",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 99,
+            "weight": 0.5,
+        },
+    ).get_json()["assignment"]
+    child_ids = []
+    for title, expected in (("Aggregate A", 3), ("Aggregate B", 7)):
+        child = client.post(
+            "/api/work/assignments",
+            headers=auth_headers("hr_jane", "hr123"),
+            json={
+                "title": title,
+                "assigned_to_user_id": users["intern_bob"],
+                "expected_units": expected,
+                "weight": 0.5,
+                "parent_id": parent["id"],
+            },
+        ).get_json()["assignment"]
+        child_ids.append((child["id"], expected))
+
+    client.post(
+        f"/api/work/assignments/{child_ids[0][0]}/progress",
+        headers=auth_headers("intern_bob", "intern123"),
+        json={"completed_units": 3},
+    )
+    client.post(
+        f"/api/work/assignments/{child_ids[1][0]}/progress",
+        headers=auth_headers("intern_bob", "intern123"),
+        json={"completed_units": 2},
+    )
+
+    kpi_response = client.get(
+        f"/api/work/assignments/{parent['id']}/kpi",
+        headers=auth_headers("hr_jane", "hr123"),
+    )
+    assert kpi_response.status_code == 200
+    assert kpi_response.get_json()["kpi"] == {
+        "expected_units": 10,
+        "total_completed_units": 5,
+        "completion_ratio": 0.5,
+        "weighted_score": 0.25,
+    }
+
+
+def test_parent_delete_is_blocked_while_children_exist(client, auth_headers, users):
+    parent = client.post(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "title": "Delete Parent",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 5,
+            "weight": 0.5,
+        },
+    ).get_json()["assignment"]
+    client.post(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "title": "Delete Child",
+            "assigned_to_user_id": users["intern_bob"],
+            "expected_units": 2,
+            "weight": 0.5,
+            "parent_id": parent["id"],
+        },
+    )
+
+    response = client.delete(
+        f"/api/work/assignments/{parent['id']}",
+        headers=auth_headers("admin", "admin123"),
+    )
+    assert response.status_code == 400
+    assert "child assignments" in response.get_json()["error"]
+
+
 def test_admin_and_hr_can_create_assignment(client, auth_headers, users, app):
     for username, password in (("admin", "admin123"), ("hr_jane", "hr123")):
         response = client.post(

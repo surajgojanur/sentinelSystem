@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import { format } from 'date-fns'
-import { KanbanSquare, RefreshCw } from 'lucide-react'
+import { ChevronDown, ChevronRight, KanbanSquare, RefreshCw } from 'lucide-react'
 
 import api from '../utils/api'
 
@@ -54,6 +54,7 @@ function BoardColumn({ column, children }) {
 }
 
 function AssignmentCard({ item, escalatingId, onEscalate }) {
+  const [showChildren, setShowChildren] = useState(false)
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `assignment:${item.id}`,
     data: { assignmentId: item.id, status: item.status },
@@ -102,6 +103,21 @@ function AssignmentCard({ item, escalatingId, onEscalate }) {
           {item.status.replace('_', ' ')}
         </span>
         <div className="flex items-center gap-2">
+          {!!item.child_count && (
+            <button
+              type="button"
+              onPointerDown={event => event.stopPropagation()}
+              onMouseDown={event => event.stopPropagation()}
+              onClick={event => {
+                event.stopPropagation()
+                setShowChildren(current => !current)
+              }}
+              className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-mono font-bold border border-accent/20 bg-accent/10 text-accent"
+            >
+              {showChildren ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+              {item.child_count} subtasks
+            </button>
+          )}
           {item.open_escalation && (
             <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold border text-danger border-danger/20 bg-danger/10">
               escalated
@@ -127,6 +143,44 @@ function AssignmentCard({ item, escalatingId, onEscalate }) {
         >
           {escalatingId === item.id ? 'Escalating...' : 'Escalate'}
         </button>
+      )}
+
+      {showChildren && !!item.children?.length && (
+        <div className="mt-3 space-y-2 rounded-xl border border-white/8 bg-white/5 p-3">
+          {item.children.map(child => (
+            <ChildAssignmentPreview key={child.id} item={child} depth={0} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ChildAssignmentPreview({ item, depth }) {
+  const [expanded, setExpanded] = useState(false)
+  const hasChildren = !!item.children?.length
+
+  return (
+    <div style={{ paddingLeft: `${depth * 14}px` }}>
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-white/8 bg-bg-800/70 px-3 py-2.5">
+        <div className="min-w-0">
+          <p className="truncate text-xs font-semibold text-white">{item.title}</p>
+          <p className="mt-1 text-[10px] font-mono text-slate-500">
+            {item.status.replace('_', ' ')} / {formatPercent(item.kpi?.completion_ratio)}
+          </p>
+        </div>
+        {hasChildren && (
+          <button type="button" onClick={() => setExpanded(current => !current)} className="text-slate-400 hover:text-white">
+            {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+          </button>
+        )}
+      </div>
+      {hasChildren && expanded && (
+        <div className="mt-2 space-y-2">
+          {item.children.map(child => (
+            <ChildAssignmentPreview key={child.id} item={child} depth={depth + 1} />
+          ))}
+        </div>
       )}
     </div>
   )

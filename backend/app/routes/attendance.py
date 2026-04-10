@@ -28,17 +28,23 @@ def register_face():
     if not actor:
         return jsonify({"error": "User not found"}), 404
 
+    if not _is_admin_or_hr(actor):
+        return jsonify({"error": "Only admin/hr can manage face enrollment"}), 403
+
     data = request.get_json() or {}
     image_payload = data.get("image_base64", "")
-    target_user_id = data.get("user_id", actor.id)
+    target_user_id = data.get("user_id")
 
     if not image_payload:
         return jsonify({"error": "image_base64 is required"}), 400
+    if target_user_id is None:
+        return jsonify({"error": "user_id is required"}), 400
+    try:
+        target_user_id = int(target_user_id)
+    except (TypeError, ValueError):
+        return jsonify({"error": "user_id must be an integer"}), 400
 
-    if target_user_id != actor.id and not _is_admin_or_hr(actor):
-        return jsonify({"error": "Only admin/hr can register face for other users"}), 403
-
-    target = db.session.get(User, int(target_user_id))
+    target = db.session.get(User, target_user_id)
     if not target:
         return jsonify({"error": "Target user not found"}), 404
 
@@ -79,9 +85,13 @@ def mark_attendance():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
+    actor_profile = FaceProfile.query.filter_by(user_id=actor.id).first()
+    if not actor_profile and not _is_admin_or_hr(actor):
+        return jsonify({"error": "No face credential is enrolled for this account. Contact admin."}), 403
+
     if not profile:
         return jsonify({
-            "error": "No matching face profile found",
+            "error": "Face does not match any enrolled employee profile",
             "confidence": round(float(score), 4),
         }), 404
 

@@ -111,6 +111,9 @@ export default function MyWorkPage() {
                       <p className="text-xs text-slate-500 mt-1">
                         Assigned by {item.assigned_by_user?.username} • Due {item.due_date ? format(new Date(item.due_date), 'MMM dd, yyyy') : 'Not set'}
                       </p>
+                      {!!item.breadcrumbs?.length && (
+                        <p className="text-[11px] text-slate-500 mt-1">{item.breadcrumbs.map(crumb => crumb.title).join(' / ')}</p>
+                      )}
                     </div>
                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${STATUS_STYLES[item.status] || STATUS_STYLES.pending}`}>
                       {item.status}
@@ -141,35 +144,41 @@ export default function MyWorkPage() {
                   <div className="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-4">
                     <div className="rounded-2xl border border-white/8 bg-white/5 p-4">
                       <p className="text-xs font-bold text-white mb-3">Submit Progress</p>
-                      <div className="space-y-3">
-                        <div>
-                          <label className="block text-[10px] text-slate-500 font-mono uppercase tracking-wider mb-1.5">Completed Units</label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={form.completed_units}
-                            onChange={event => updateForm(item.id, 'completed_units', event.target.value)}
-                            className="w-full rounded-xl border border-white/10 bg-bg-800 px-3 py-2.5 text-sm text-white outline-none focus:border-accent/40"
-                          />
+                      {item.is_leaf ? (
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-[10px] text-slate-500 font-mono uppercase tracking-wider mb-1.5">Completed Units</label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={form.completed_units}
+                              onChange={event => updateForm(item.id, 'completed_units', event.target.value)}
+                              className="w-full rounded-xl border border-white/10 bg-bg-800 px-3 py-2.5 text-sm text-white outline-none focus:border-accent/40"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-slate-500 font-mono uppercase tracking-wider mb-1.5">Note</label>
+                            <textarea
+                              rows={3}
+                              value={form.note}
+                              onChange={event => updateForm(item.id, 'note', event.target.value)}
+                              className="w-full rounded-xl border border-white/10 bg-bg-800 px-3 py-2.5 text-sm text-white outline-none focus:border-accent/40"
+                            />
+                          </div>
+                          <button
+                            onClick={() => submitProgress(item.id)}
+                            disabled={submittingId === item.id}
+                            className="rounded-xl border border-accent/30 bg-accent/10 px-4 py-2.5 text-sm font-semibold text-accent hover:bg-accent/20 disabled:opacity-50"
+                          >
+                            {submittingId === item.id ? 'Submitting...' : 'Submit Update'}
+                          </button>
                         </div>
-                        <div>
-                          <label className="block text-[10px] text-slate-500 font-mono uppercase tracking-wider mb-1.5">Note</label>
-                          <textarea
-                            rows={3}
-                            value={form.note}
-                            onChange={event => updateForm(item.id, 'note', event.target.value)}
-                            className="w-full rounded-xl border border-white/10 bg-bg-800 px-3 py-2.5 text-sm text-white outline-none focus:border-accent/40"
-                          />
-                        </div>
-                        <button
-                          onClick={() => submitProgress(item.id)}
-                          disabled={submittingId === item.id}
-                          className="rounded-xl border border-accent/30 bg-accent/10 px-4 py-2.5 text-sm font-semibold text-accent hover:bg-accent/20 disabled:opacity-50"
-                        >
-                          {submittingId === item.id ? 'Submitting...' : 'Submit Update'}
-                        </button>
-                      </div>
+                      ) : (
+                        <p className="text-xs leading-relaxed text-slate-400">
+                          Progress is submitted on leaf subtasks. Parent task progress is derived automatically from the task tree.
+                        </p>
+                      )}
                     </div>
 
                     <div className="rounded-2xl border border-white/8 bg-white/5 overflow-hidden">

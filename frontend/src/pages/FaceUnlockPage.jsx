@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { AlertCircle, Camera, LockKeyhole, ScanFace } from 'lucide-react'
+import { AlertCircle, LockKeyhole, ScanFace } from 'lucide-react'
 
 import { useAuth } from '../context/AuthContext'
 import api from '../utils/api'
@@ -86,24 +86,6 @@ export default function FaceUnlockPage() {
     }
   }
 
-  const registerFace = async () => {
-    setError('')
-    const imageBase64 = captureFrame()
-    if (!imageBase64) {
-      setError('Could not capture your face. Please retry.')
-      return
-    }
-    setLoading(true)
-    try {
-      await api.post('/face/register', { image_base64: imageBase64 })
-      setError('')
-    } catch (err) {
-      setError(err?.response?.data?.error || 'Face registration failed.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-bg-900 grid-bg p-4">
       <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[30rem] h-[30rem] bg-accent/5 rounded-full blur-3xl pointer-events-none" />
@@ -151,15 +133,11 @@ export default function FaceUnlockPage() {
             <ScanFace size={15} className="inline mr-2" />
             {loading ? 'Verifying...' : 'Unlock With Face'}
           </motion.button>
-          <button
-            onClick={registerFace}
-            disabled={!cameraReady || loading}
-            className="px-4 py-3 rounded-xl border border-white/10 text-slate-300 hover:text-accent text-sm font-medium"
-          >
-            <Camera size={14} className="inline mr-1.5" />
-            Register Face First
-          </button>
         </div>
+
+        <p className="mt-4 text-xs text-slate-500">
+          Face enrollment is completed by admin when your account is created. If unlock fails because no face is enrolled, contact admin.
+        </p>
       </motion.div>
     </div>
   )

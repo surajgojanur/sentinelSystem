@@ -36,6 +36,7 @@ def app(tmp_path, monkeypatch):
     with app.app_context():
         db.session.remove()
         db.drop_all()
+        db.engine.dispose()
 
     if Path(db_path).exists():
         Path(db_path).unlink()

@@ -1,4 +1,23 @@
+import base64
+import io
+
+from PIL import Image, ImageDraw
+
 from tests.test_work_management import _create_assignment
+
+
+def _sample_face_image(seed=0):
+    image = Image.new("L", (64, 64), color=20 + seed)
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((12, 8, 52, 48), fill=180 - seed)
+    draw.ellipse((22, 22, 28, 30), fill=25 + seed)
+    draw.ellipse((36, 22, 42, 30), fill=25 + seed)
+    draw.arc((24, 28, 40, 42), start=0, end=180, fill=60 + seed, width=2)
+
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 
 def _assert_iso_datetime(value):
@@ -16,6 +35,7 @@ def _assert_user_contract(payload):
         "role_id",
         "created_at",
         "is_active",
+        "face_enrolled",
         "sensitive_query_count",
         "is_suspicious",
         "flagged_at",
@@ -27,6 +47,7 @@ def _assert_user_contract(payload):
     assert payload["role_id"] is None or isinstance(payload["role_id"], int)
     _assert_iso_datetime(payload["created_at"])
     assert isinstance(payload["is_active"], bool)
+    assert isinstance(payload["face_enrolled"], bool)
     assert isinstance(payload["sensitive_query_count"], int)
     assert isinstance(payload["is_suspicious"], bool)
     assert payload["flagged_at"] is None or isinstance(payload["flagged_at"], str)
@@ -61,6 +82,7 @@ def _assert_progress_update_contract(payload):
         "id",
         "assignment_id",
         "reported_by_user_id",
+        "reported_by_username",
         "completed_units",
         "note",
         "created_at",
@@ -68,6 +90,7 @@ def _assert_progress_update_contract(payload):
     assert isinstance(payload["id"], int)
     assert isinstance(payload["assignment_id"], int)
     assert isinstance(payload["reported_by_user_id"], int)
+    assert payload["reported_by_username"] is None or isinstance(payload["reported_by_username"], str)
     assert isinstance(payload["completed_units"], (int, float))
     assert payload["note"] is None or isinstance(payload["note"], str)
     _assert_iso_datetime(payload["created_at"])
@@ -85,36 +108,52 @@ def _assert_assignment_contract(payload):
     assert isinstance(payload, dict)
     assert set(payload) == {
         "id",
+        "project_id",
+        "parent_id",
         "title",
         "description",
         "assigned_by_user_id",
         "assigned_to_user_id",
         "expected_units",
         "weight",
+        "github_issue_id",
+        "github_branch",
         "due_date",
         "status",
         "created_at",
         "updated_at",
+        "child_count",
+        "is_leaf",
         "kpi",
         "progress_updates",
         "assigned_by_username",
         "assigned_to_username",
         "assigned_by_user",
         "assigned_to_user",
+        "project",
+        "parent",
+        "breadcrumbs",
+        "children",
         "capacity_risk",
         "open_escalation",
     }
     assert isinstance(payload["id"], int)
+    assert payload["project_id"] is None or isinstance(payload["project_id"], int)
+    assert payload["parent_id"] is None or isinstance(payload["parent_id"], int)
     assert isinstance(payload["title"], str)
     assert payload["description"] is None or isinstance(payload["description"], str)
     assert isinstance(payload["assigned_by_user_id"], int)
     assert isinstance(payload["assigned_to_user_id"], int)
     assert isinstance(payload["expected_units"], (int, float))
     assert isinstance(payload["weight"], (int, float))
+    assert payload["github_issue_id"] is None or isinstance(payload["github_issue_id"], str)
+    assert payload["github_branch"] is None or isinstance(payload["github_branch"], str)
     assert payload["due_date"] is None or isinstance(payload["due_date"], str)
     assert isinstance(payload["status"], str)
     _assert_iso_datetime(payload["created_at"])
     _assert_iso_datetime(payload["updated_at"])
+    assert isinstance(payload["child_count"], int)
+    assert isinstance(payload["is_leaf"], bool)
     _assert_kpi_contract(payload["kpi"])
     assert isinstance(payload["progress_updates"], list)
     for update in payload["progress_updates"]:
@@ -123,6 +162,15 @@ def _assert_assignment_contract(payload):
     assert payload["assigned_to_username"] is None or isinstance(payload["assigned_to_username"], str)
     assert payload["assigned_by_user"] is None or _assert_user_contract(payload["assigned_by_user"]) is None
     assert payload["assigned_to_user"] is None or _assert_user_contract(payload["assigned_to_user"]) is None
+    if payload["project"] is not None:
+        assert isinstance(payload["project"], dict)
+    if payload["parent"] is not None:
+        _assert_assignment_summary_contract(payload["parent"])
+    assert isinstance(payload["breadcrumbs"], list)
+    for item in payload["breadcrumbs"]:
+        _assert_assignment_summary_contract(item)
+    if payload["children"] is not None:
+        assert isinstance(payload["children"], list)
     _assert_capacity_risk_contract(payload["capacity_risk"])
     if payload["open_escalation"] is not None:
         _assert_escalation_contract(payload["open_escalation"])
@@ -371,3 +419,37 @@ def test_update_escalation_endpoint_contract(client, auth_headers, users, app):
     assert isinstance(body["escalation"], dict)
     _assert_escalation_contract(body["escalation"])
     assert body["escalation"]["status"] == "resolved"
+
+
+def test_admin_create_user_requires_face_image(client, auth_headers):
+    response = client.post(
+        "/api/admin/create-user",
+        headers=auth_headers("admin", "admin123"),
+        json={"username": "new_joiner", "role": "intern"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "Username, role, and face image are required"
+
+
+def test_admin_create_user_returns_face_profile_contract(client, auth_headers):
+    response = client.post(
+        "/api/admin/create-user",
+        headers=auth_headers("admin", "admin123"),
+        json={
+            "username": "new_joiner",
+            "role": "intern",
+            "image_base64": _sample_face_image(),
+        },
+    )
+
+    assert response.status_code == 201, response.get_json()
+    body = response.get_json()
+    assert set(body) == {"message", "login_code", "user", "face_profile"}
+    assert isinstance(body["message"], str)
+    assert isinstance(body["login_code"], str)
+    _assert_user_contract(body["user"])
+    assert body["user"]["face_enrolled"] is True
+    assert isinstance(body["face_profile"], dict)
+    assert body["face_profile"]["user_id"] == body["user"]["id"]
+    assert body["face_profile"]["username"] == body["user"]["username"]
