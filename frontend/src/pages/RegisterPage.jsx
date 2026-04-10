@@ -1,15 +1,54 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
 import { Shield, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
+import api from '../utils/api'
+
+const FALLBACK_ROLES = ['Admin', 'HR', 'Intern', 'Developer', 'Manager', 'Team Lead', 'Finance', 'Analyst', 'Security']
 
 export default function RegisterPage() {
   const { register } = useAuth()
+  const [roles, setRoles] = useState(FALLBACK_ROLES)
   const [form, setForm] = useState({ username: '', email: '', password: '', role: 'intern' })
   const [loading, setLoading] = useState(false)
+  const [rolesLoading, setRolesLoading] = useState(true)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+
+    api.get('/roles')
+      .then(res => {
+        if (!active) return
+        const nextRoles = (res.data?.roles || []).map(role => role.name).filter(Boolean)
+        if (nextRoles.length) {
+          setRoles(nextRoles)
+          setForm(current => {
+            if (nextRoles.some(role => role.toLowerCase() === current.role)) {
+              return current
+            }
+            const internRole = nextRoles.find(role => role.toLowerCase() === 'intern') || nextRoles[0]
+            return { ...current, role: internRole.toLowerCase() }
+          })
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setRoles(FALLBACK_ROLES)
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setRolesLoading(false)
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   const handleSubmit = async e => {
     e.preventDefault()
@@ -78,11 +117,12 @@ export default function RegisterPage() {
               <select
                 value={form.role}
                 onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
-                className="w-full px-4 py-3 rounded-xl bg-bg-800 border border-white/8 text-white focus:outline-none focus:border-accent/50 transition-all text-sm"
+                disabled={rolesLoading}
+                className="w-full px-4 py-3 rounded-xl bg-bg-800 border border-white/8 text-white focus:outline-none focus:border-accent/50 transition-all text-sm disabled:opacity-60"
               >
-                <option value="intern">Intern</option>
-                <option value="hr">HR</option>
-                <option value="admin">Admin</option>
+                {roles.map(role => (
+                  <option key={role} value={role.toLowerCase()}>{role}</option>
+                ))}
               </select>
             </div>
 
@@ -90,7 +130,7 @@ export default function RegisterPage() {
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
               type="submit"
-              disabled={loading}
+              disabled={loading || rolesLoading}
               className="w-full py-3 rounded-xl bg-accent text-bg-900 font-bold text-sm tracking-wide hover:bg-accent-dim transition-all disabled:opacity-50 shadow-glow"
             >
               {loading ? 'Creating account...' : 'Create Account'}

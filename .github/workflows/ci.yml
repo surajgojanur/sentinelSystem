@@ -3,9 +3,6 @@ name: CI
 on:
   pull_request:
   push:
-    branches:
-      - main
-      - master
 
 jobs:
   backend-tests:
@@ -30,6 +27,29 @@ jobs:
 
       - name: Run backend tests
         run: python -m pytest -q
+
+  api-contract-tests:
+    name: API Contract Tests
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run API contract tests
+        run: python -m pytest -q tests/test_api_contract.py
 
   frontend-build:
     name: Frontend Build

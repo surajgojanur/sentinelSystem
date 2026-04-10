@@ -13,6 +13,7 @@ def _assert_user_contract(payload):
         "username",
         "email",
         "role",
+        "role_id",
         "created_at",
         "is_active",
         "sensitive_query_count",
@@ -23,6 +24,7 @@ def _assert_user_contract(payload):
     assert isinstance(payload["username"], str)
     assert isinstance(payload["email"], str)
     assert isinstance(payload["role"], str)
+    assert payload["role_id"] is None or isinstance(payload["role_id"], int)
     _assert_iso_datetime(payload["created_at"])
     assert isinstance(payload["is_active"], bool)
     assert isinstance(payload["sensitive_query_count"], int)
