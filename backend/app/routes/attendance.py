@@ -14,7 +14,7 @@ attendance_bp = Blueprint("attendance", __name__)
 
 def _current_user():
     user_id = int(get_jwt_identity())
-    return User.query.get(user_id)
+    return db.session.get(User, user_id)
 
 
 def _is_admin_or_hr(user: User | None) -> bool:
@@ -38,7 +38,7 @@ def register_face():
     if target_user_id != actor.id and not _is_admin_or_hr(actor):
         return jsonify({"error": "Only admin/hr can register face for other users"}), 403
 
-    target = User.query.get(int(target_user_id))
+    target = db.session.get(User, int(target_user_id))
     if not target:
         return jsonify({"error": "Target user not found"}), 404
 
@@ -85,7 +85,7 @@ def mark_attendance():
             "confidence": round(float(score), 4),
         }), 404
 
-    matched_user = User.query.get(profile.user_id)
+    matched_user = db.session.get(User, profile.user_id)
     if not matched_user:
         return jsonify({"error": "Matched user no longer exists"}), 404
 

@@ -6,6 +6,7 @@ from flask_socketio import SocketIO
 from dotenv import load_dotenv
 import os
 from importlib import import_module
+from sqlalchemy import text
 
 load_dotenv()
 
@@ -43,6 +44,7 @@ def create_app():
     from app.routes.users import users_bp
     from app.routes.messages import messages_bp
     from app.routes.attendance import attendance_bp
+    from app.routes.work_management import work_management_bp
     from ghost_routes import ghost_bp
     from attack_routes import attack_bp
 
@@ -52,6 +54,7 @@ def create_app():
     app.register_blueprint(users_bp, url_prefix="/api")
     app.register_blueprint(messages_bp, url_prefix="/api")
     app.register_blueprint(attendance_bp, url_prefix="/api")
+    app.register_blueprint(work_management_bp, url_prefix="/api")
     app.register_blueprint(ghost_bp, url_prefix="/api")
     app.register_blueprint(attack_bp, url_prefix="/api")
     # Socket events
@@ -60,6 +63,7 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        _ensure_work_escalation_columns()
         _seed_demo_users()
 
     return app
@@ -84,3 +88,15 @@ def _seed_demo_users():
             )
             db.session.add(user)
     db.session.commit()
+
+
+def _ensure_work_escalation_columns():
+    inspector = db.inspect(db.engine)
+    if not inspector.has_table("work_escalations"):
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("work_escalations")}
+    if "status" not in columns:
+        db.session.execute(text("ALTER TABLE work_escalations ADD COLUMN status VARCHAR(20) DEFAULT 'open'"))
+        db.session.execute(text("UPDATE work_escalations SET status = 'open' WHERE status IS NULL"))
+        db.session.commit()

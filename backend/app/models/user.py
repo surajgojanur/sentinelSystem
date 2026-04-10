@@ -1,5 +1,6 @@
+from datetime import UTC, datetime
+
 from app import db
-from datetime import datetime
 
 
 class User(db.Model):
@@ -10,7 +11,7 @@ class User(db.Model):
     email                = db.Column(db.String(120), unique=True, nullable=False)
     password_hash        = db.Column(db.String(256), nullable=False)
     role                 = db.Column(db.String(20), nullable=False, default="intern")
-    created_at           = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at           = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
     is_active            = db.Column(db.Boolean, default=True)
 
     # v2: suspicious-user tracking ─────────────────────────────────────────

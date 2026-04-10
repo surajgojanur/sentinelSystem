@@ -1,7 +1,11 @@
+from datetime import UTC, datetime, timedelta
+
 from app import db
+from app.models.attendance_record import AttendanceRecord
 from app.models.audit_log import AuditLog
-from app.models import WorkAssignment, WorkProgressUpdate
+from app.models import WorkAssignment, WorkEscalation, WorkProgressUpdate
 import pytest
+from sqlalchemy import text
 
 
 def _create_assignment(app, **overrides):
@@ -37,6 +41,20 @@ def _add_progress(app, assignment_id, reported_by_user_id, completed_units, note
         return update.id
 
 
+def _add_attendance(app, user_id, *, days_ago=0, event_type="check_in"):
+    with app.app_context():
+        record = AttendanceRecord(
+            user_id=user_id,
+            event_type=event_type,
+            confidence=0.98,
+            source="test",
+            created_at=datetime.now(UTC) - timedelta(days=days_ago),
+        )
+        db.session.add(record)
+        db.session.commit()
+        return record.id
+
+
 def test_assignment_model_defaults(app, users):
     assignment_id = _create_assignment(
         app,
@@ -47,7 +65,7 @@ def test_assignment_model_defaults(app, users):
     )
 
     with app.app_context():
-        assignment = WorkAssignment.query.get(assignment_id)
+        assignment = db.session.get(WorkAssignment, assignment_id)
         assert assignment.status == "pending"
         assert assignment.weight == 0.4
         assert assignment.expected_units == 10
@@ -202,6 +220,7 @@ def test_kpi_endpoint_returns_correct_values(client, auth_headers, users, app):
         "completion_ratio": 0.6,
         "weighted_score": 0.36,
     }
+    assert response.get_json()["capacity_risk"]["level"] in {"low", "medium", "high"}
 
 
 def test_invalid_payloads_and_assignment_ids_are_rejected(client, auth_headers, users, app):
@@ -268,8 +287,8 @@ def test_compute_kpi_handles_zero_expected_units_and_over_completion(app, users)
     _add_progress(app, over_assignment_id, users["intern_bob"], 7)
 
     with app.app_context():
-        zero_assignment = WorkAssignment.query.get(zero_assignment_id)
-        over_assignment = WorkAssignment.query.get(over_assignment_id)
+        zero_assignment = db.session.get(WorkAssignment, zero_assignment_id)
+        over_assignment = db.session.get(WorkAssignment, over_assignment_id)
 
         assert zero_assignment.compute_kpi() == {
             "expected_units": 0,
@@ -283,3 +302,314 @@ def test_compute_kpi_handles_zero_expected_units_and_over_completion(app, users)
             "completion_ratio": 1.4,
             "weighted_score": 0.5,
         }
+
+
+def test_overdue_assignment_is_high_capacity_risk(client, auth_headers, users, app):
+    assignment_id = _create_assignment(
+        app,
+        assigned_by_user_id=users["admin"],
+        assigned_to_user_id=users["intern_bob"],
+        due_date=(datetime.now(UTC).date() - timedelta(days=1)),
+        expected_units=20,
+        weight=0.5,
+    )
+
+    response = client.get(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+    )
+
+    assignment = next(item for item in response.get_json()["assignments"] if item["id"] == assignment_id)
+    assert assignment["capacity_risk"]["level"] == "high"
+    assert "Overdue and not completed." in assignment["capacity_risk"]["reasons"]
+
+
+def test_due_soon_low_completion_and_no_recent_attendance_raise_risk(client, auth_headers, users, app):
+    assignment_id = _create_assignment(
+        app,
+        assigned_by_user_id=users["hr_jane"],
+        assigned_to_user_id=users["intern_bob"],
+        due_date=(datetime.now(UTC).date() + timedelta(days=2)),
+        expected_units=10,
+        weight=0.4,
+    )
+    _add_progress(app, assignment_id, users["intern_bob"], 2)
+    _add_attendance(app, users["intern_bob"], days_ago=5)
+
+    response = client.get(
+        f"/api/work/assignments/{assignment_id}/kpi",
+        headers=auth_headers("hr_jane", "hr123"),
+    )
+
+    risk = response.get_json()["capacity_risk"]
+    assert risk["level"] == "high"
+    assert "Due within 2 days with low completion." in risk["reasons"]
+    assert "No recent attendance signal for assignee." in risk["reasons"]
+
+
+def test_many_incomplete_assignments_raise_medium_risk(client, auth_headers, users, app):
+    assignment_ids = [
+        _create_assignment(
+            app,
+            assigned_by_user_id=users["admin"],
+            assigned_to_user_id=users["intern_bob"],
+            title=f"Assignment {index}",
+            expected_units=10,
+            weight=0.3,
+            due_date=(datetime.now(UTC).date() + timedelta(days=10)),
+        )
+        for index in range(1, 4)
+    ]
+    _add_attendance(app, users["intern_bob"], days_ago=1)
+
+    response = client.get(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+    )
+
+    risky_assignments = [
+        item for item in response.get_json()["assignments"]
+        if item["id"] in assignment_ids
+    ]
+    assert len(risky_assignments) == 3
+    for item in risky_assignments:
+        assert item["capacity_risk"]["level"] == "medium"
+        assert "Assignee has many active incomplete assignments." in item["capacity_risk"]["reasons"]
+
+
+def test_legacy_datetime_due_date_rows_still_load_for_assignments_page(client, auth_headers, app):
+    with app.app_context():
+        db.session.execute(
+            text(
+                """
+                INSERT INTO work_assignments
+                (title, description, assigned_by_user_id, assigned_to_user_id, expected_units, weight, due_date, status, created_at, updated_at)
+                VALUES
+                (:title, :description, :assigned_by_user_id, :assigned_to_user_id, :expected_units, :weight, :due_date, :status, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """
+            ),
+            {
+                "title": "Legacy Due Date Assignment",
+                "description": "legacy row",
+                "assigned_by_user_id": 1,
+                "assigned_to_user_id": 3,
+                "expected_units": 8,
+                "weight": 0.5,
+                "due_date": "2026-04-21T00:00:00",
+                "status": "pending",
+            },
+        )
+        db.session.commit()
+
+    response = client.get(
+        "/api/work/assignments",
+        headers=auth_headers("admin", "admin123"),
+    )
+
+    assert response.status_code == 200
+    assignment = next(item for item in response.get_json()["assignments"] if item["title"] == "Legacy Due Date Assignment")
+    assert assignment["due_date"] == "2026-04-21"
+
+
+def test_work_board_requires_manager_role_and_maps_pending_to_todo(client, auth_headers, users, app):
+    _create_assignment(
+        app,
+        assigned_by_user_id=users["admin"],
+        assigned_to_user_id=users["intern_bob"],
+        title="Board Assignment",
+        expected_units=8,
+    )
+
+    denied = client.get(
+        "/api/work/board",
+        headers=auth_headers("intern_bob", "intern123"),
+    )
+    assert denied.status_code == 403
+
+    response = client.get(
+        "/api/work/board",
+        headers=auth_headers("admin", "admin123"),
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["columns"] == ["todo", "in_progress", "blocked", "completed"]
+    assignment = next(item for item in body["assignments"] if item["title"] == "Board Assignment")
+    assert assignment["status"] == "todo"
+
+
+def test_manager_can_patch_assignment_status_and_board_preserves_blocked(client, auth_headers, users, app):
+    assignment_id = _create_assignment(
+        app,
+        assigned_by_user_id=users["hr_jane"],
+        assigned_to_user_id=users["intern_bob"],
+        title="Blocked Assignment",
+        expected_units=10,
+    )
+
+    patch_response = client.patch(
+        f"/api/work/assignments/{assignment_id}/status",
+        headers=auth_headers("hr_jane", "hr123"),
+        json={"status": "blocked"},
+    )
+    assert patch_response.status_code == 200
+    assert patch_response.get_json()["assignment"]["status"] == "blocked"
+
+    board_response = client.get(
+        "/api/work/board",
+        headers=auth_headers("admin", "admin123"),
+    )
+    board_assignment = next(item for item in board_response.get_json()["assignments"] if item["id"] == assignment_id)
+    assert board_assignment["status"] == "blocked"
+
+    invalid = client.patch(
+        f"/api/work/assignments/{assignment_id}/status",
+        headers=auth_headers("admin", "admin123"),
+        json={"status": "pending"},
+    )
+    assert invalid.status_code == 400
+
+
+def test_admin_or_hr_can_create_escalation(client, auth_headers, users, app):
+    assignment_id = _create_assignment(
+        app,
+        assigned_by_user_id=users["admin"],
+        assigned_to_user_id=users["intern_bob"],
+        title="Escalation Target",
+        expected_units=10,
+    )
+
+    response = client.post(
+        "/api/work/escalations",
+        headers=auth_headers("hr_jane", "hr123"),
+        json={"assignment_id": assignment_id, "reason": "High risk workload needs attention"},
+    )
+
+    assert response.status_code == 201, response.get_json()
+    body = response.get_json()["escalation"]
+    assert body["assignment_id"] == assignment_id
+    assert body["created_by_username"] == "hr_jane"
+    assert body["reason"] == "High risk workload needs attention"
+    assert body["status"] == "open"
+
+    with app.app_context():
+        escalation = db.session.query(WorkEscalation).filter_by(assignment_id=assignment_id).one()
+        assert escalation.created_by_user_id == users["hr_jane"]
+        assert escalation.status == "open"
+
+
+def test_escalation_rejects_invalid_assignment(client, auth_headers):
+    response = client.post(
+        "/api/work/escalations",
+        headers=auth_headers("admin", "admin123"),
+        json={"assignment_id": 9999},
+    )
+
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "Assignment not found"
+
+
+def test_non_manager_cannot_create_escalation(client, auth_headers, users, app):
+    assignment_id = _create_assignment(
+        app,
+        assigned_by_user_id=users["admin"],
+        assigned_to_user_id=users["intern_bob"],
+        title="Unauthorized Escalation Target",
+        expected_units=10,
+    )
+
+    response = client.post(
+        "/api/work/escalations",
+        headers=auth_headers("intern_bob", "intern123"),
+        json={"assignment_id": assignment_id},
+    )
+
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "Admin/HR access required"
+
+
+def test_duplicate_open_escalation_is_rejected(client, auth_headers, users, app):
+    assignment_id = _create_assignment(
+        app,
+        assigned_by_user_id=users["admin"],
+        assigned_to_user_id=users["intern_bob"],
+        title="Duplicate Escalation Target",
+        expected_units=10,
+    )
+
+    first = client.post(
+        "/api/work/escalations",
+        headers=auth_headers("admin", "admin123"),
+        json={"assignment_id": assignment_id, "reason": "Initial escalation"},
+    )
+    assert first.status_code == 201
+
+    second = client.post(
+        "/api/work/escalations",
+        headers=auth_headers("hr_jane", "hr123"),
+        json={"assignment_id": assignment_id, "reason": "Duplicate escalation"},
+    )
+    assert second.status_code == 400
+    assert second.get_json()["error"] == "An open escalation already exists for this assignment"
+
+
+def test_escalation_list_and_resolve_work_for_manager(client, auth_headers, users, app):
+    assignment_id = _create_assignment(
+        app,
+        assigned_by_user_id=users["admin"],
+        assigned_to_user_id=users["intern_bob"],
+        title="Resolve Escalation Target",
+        expected_units=10,
+    )
+
+    create_response = client.post(
+        "/api/work/escalations",
+        headers=auth_headers("admin", "admin123"),
+        json={"assignment_id": assignment_id, "reason": "Needs review"},
+    )
+    escalation_id = create_response.get_json()["escalation"]["id"]
+
+    list_response = client.get(
+        "/api/work/escalations",
+        headers=auth_headers("hr_jane", "hr123"),
+    )
+    assert list_response.status_code == 200
+    escalation = next(item for item in list_response.get_json()["escalations"] if item["id"] == escalation_id)
+    assert escalation["assignment"]["title"] == "Resolve Escalation Target"
+    assert escalation["status"] == "open"
+
+    resolve_response = client.patch(
+        f"/api/work/escalations/{escalation_id}",
+        headers=auth_headers("hr_jane", "hr123"),
+        json={"status": "resolved"},
+    )
+    assert resolve_response.status_code == 200
+    assert resolve_response.get_json()["escalation"]["status"] == "resolved"
+
+
+def test_non_manager_cannot_list_or_resolve_escalations(client, auth_headers, users, app):
+    assignment_id = _create_assignment(
+        app,
+        assigned_by_user_id=users["admin"],
+        assigned_to_user_id=users["intern_bob"],
+        title="Unauthorized Escalation Management",
+        expected_units=10,
+    )
+    create_response = client.post(
+        "/api/work/escalations",
+        headers=auth_headers("admin", "admin123"),
+        json={"assignment_id": assignment_id, "reason": "Needs manager view"},
+    )
+    escalation_id = create_response.get_json()["escalation"]["id"]
+
+    denied_list = client.get(
+        "/api/work/escalations",
+        headers=auth_headers("intern_bob", "intern123"),
+    )
+    assert denied_list.status_code == 403
+
+    denied_patch = client.patch(
+        f"/api/work/escalations/{escalation_id}",
+        headers=auth_headers("intern_bob", "intern123"),
+        json={"status": "resolved"},
+    )
+    assert denied_patch.status_code == 403

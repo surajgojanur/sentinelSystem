@@ -293,6 +293,49 @@ cd backend
 python3 -m pytest
 ```
 
+## Validation / CI
+
+### What Runs Automatically
+This repo now includes a minimal CI workflow for `push` and `pull_request`.
+
+Current automated checks:
+- backend test suite via `pytest`
+- frontend production build via `npm run build`
+
+### CI Jobs
+- `Backend Tests`
+  Runs `python -m pytest -q` in `backend`
+- `Frontend Build`
+  Runs `npm ci` and `npm run build` in `frontend`
+
+### Running The Same Checks Locally
+Use the helper script from the repo root:
+
+```bash
+./scripts/validate.sh
+```
+
+Equivalent manual commands:
+
+```bash
+cd backend
+pip install -r requirements.txt
+python3 -m pytest -q
+
+cd ../frontend
+npm ci
+npm run build
+```
+
+### Current Coverage
+- backend work-management tests and related behavior
+- frontend integration/build validation
+
+### Current Limitations
+- no frontend component or browser-level automated tests yet
+- backend tests are strongest around the work-management slice and related logic
+- build validation checks integration and compilation, not full end-to-end browser behavior
+
 # 9. ⚠️ Known Limitations (IMPORTANT)
 - **In-memory chat context**: conversation history is stored in process memory and resets on restart.
 - **JSON-backed queues/history**: question-bank history and unanswered queue are file-based, not DB-backed.

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
 import {
   MessageSquare, LayoutDashboard,
-  LogOut, Shield, ChevronRight, Cpu, Database, ScanFace, ClipboardList, Briefcase
+  LogOut, Shield, ChevronRight, Cpu, Database, ScanFace, ClipboardList, Briefcase, KanbanSquare, AlertTriangle
 } from 'lucide-react'
 
 const ROLE_COLORS = {
@@ -28,7 +28,11 @@ export default function Layout() {
     { to: '/attendance', icon: ScanFace, label: 'Attendance', desc: 'Face check-in/out' },
     { to: '/my-work', icon: Briefcase, label: 'My Work', desc: 'Assigned tasks' },
     ...(['admin', 'hr'].includes(user?.role)
-      ? [{ to: '/work-assignments', icon: ClipboardList, label: 'Work Assign', desc: 'Manager workspace' }]
+      ? [
+          { to: '/work-assignments', icon: ClipboardList, label: 'Work Assign', desc: 'Manager workspace' },
+          { to: '/work-board', icon: KanbanSquare, label: 'Work Board', desc: 'Kanban status view' },
+          { to: '/work-escalations', icon: AlertTriangle, label: 'Escalations', desc: 'Resolve risks' },
+        ]
       : []),
     ...(user?.role === 'admin'
       ? [
