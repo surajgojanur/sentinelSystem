@@ -72,7 +72,9 @@ def chat():
 
     raw_response = get_ai_response(_histories[user_id])
     result = apply_governance(raw_response, query, user.role)
-    matched_question = find_question_match_for_query(contextual_query or query, user.role)
+    matched_question = find_question_match_for_query(
+        contextual_query or query, user.role
+    )
     if not matched_question:
         capture_unanswered_question(contextual_query or query, user.role, user.username)
 
@@ -82,9 +84,85 @@ def chat():
 
     if compute_query_sensitivity(query):
         user.sensitive_query_count = (user.sensitive_query_count or 0) + 1
-        if user.sensitive_query_count >= SUSPICIOUS_QUERY_THRESHOLD and not user.is_suspicious:
+        if (
+            user.sensitive_query_count >= SUSPICIOUS_QUERY_THRESHOLD
+            and not user.is_suspicious
+        ):
             user.is_suspicious = True
             user.flagged_at = datetime.now(UTC)
+
+    # ── Ghost Mode auto-feed ─────────────────────────────────────────────
+    if result.is_high_risk_alert or result.risk_level in ("high", "medium"):
+        try:
+            from app.ghost_routes import get_or_create_session, ghost_logs
+            from app import socketio
+
+            ghost_session = get_or_create_session(user.username)
+            ghost_session["risk_score"] = max(
+                ghost_session["risk_score"], int((result.risk_score or 0) * 100)
+            )
+
+            ghost_session["history"].append(
+                {
+                    "role": "user",
+                    "text": query,
+                    "risk_score": int((result.risk_score or 0) * 100),
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            )
+
+            ghost_session["history"].append(
+                {
+                    "role": "ghost",
+                    "text": result.filtered_response,
+                    "mode": "auto",
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            )
+
+            ghost_logs.append(
+                {
+                    "user": user.username,
+                    "message": query,
+                    "response": result.filtered_response,
+                    "risk_score": int((result.risk_score or 0) * 100),
+                    "mode": "auto",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "honeypot": True,
+                    "frozen": False,
+                }
+            )
+
+            # Real-time push to admin Ghost Mode dashboard
+            socketio.emit(
+                "ghost_user_message",
+                {
+                    "session_id": ghost_session["session_id"],
+                    "user": user.username,
+                    "message": query,
+                    "risk_score": int((result.risk_score or 0) * 100),
+                    "mode": ghost_session["mode"],
+                    "history": ghost_session["history"],
+                },
+                room="admin_room",
+            )
+
+            socketio.emit(
+                "trap_triggered",
+                {
+                    "session_id": ghost_session["session_id"],
+                    "user": user.username,
+                    "message": query,
+                    "risk_score": int((result.risk_score or 0) * 100),
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+                room="admin_room",
+            )
+
+        except Exception as ghost_err:
+            # Never let ghost mode break the main chat
+            print(f"[ghost-feed] error: {ghost_err}")
+    # ── End Ghost Mode feed ──────────────────────────────────────────────
 
     log = AuditLog(
         user_id=user.id,
@@ -104,20 +182,26 @@ def chat():
     db.session.add(log)
     db.session.commit()
 
-    return jsonify({
-        "log_id": log.id,
-        "response": result.filtered_response,
-        "status": result.status,
-        "risk_score": result.risk_score,
-        "risk_level": result.risk_level,
-        "reason": result.reason,
-        "triggered_rules": result.triggered_rules,
-        "validator_notes": result.validator_notes,
-        "is_high_risk": result.is_high_risk_alert,
-        "role": user.role,
-        "matched_question": serialize_question(matched_question) if matched_question else None,
-        "suggested_questions": get_suggested_questions(contextual_query or query, user.role),
-    }), 200
+    return jsonify(
+        {
+            "log_id": log.id,
+            "response": result.filtered_response,
+            "status": result.status,
+            "risk_score": result.risk_score,
+            "risk_level": result.risk_level,
+            "reason": result.reason,
+            "triggered_rules": result.triggered_rules,
+            "validator_notes": result.validator_notes,
+            "is_high_risk": result.is_high_risk_alert,
+            "role": user.role,
+            "matched_question": serialize_question(matched_question)
+            if matched_question
+            else None,
+            "suggested_questions": get_suggested_questions(
+                contextual_query or query, user.role
+            ),
+        }
+    ), 200
 
 
 @chat_bp.route("/chat/clear", methods=["POST"])
@@ -245,13 +329,19 @@ def import_questions():
         if "file" in request.files:
             file_obj = request.files["file"]
             if not file_obj or not file_obj.filename:
-                return jsonify({"error": "Please choose a .json or .pdf file to import"}), 400
-            entries, metadata = extract_questions_from_uploaded_file(file_obj.filename, file_obj.read())
+                return jsonify(
+                    {"error": "Please choose a .json or .pdf file to import"}
+                ), 400
+            entries, metadata = extract_questions_from_uploaded_file(
+                file_obj.filename, file_obj.read()
+            )
             result = import_mock_questions(entries, actor=admin.username)
             result["metadata"] = metadata
         else:
             data = request.get_json() or {}
-            result = import_mock_questions(data.get("questions", []), actor=admin.username)
+            result = import_mock_questions(
+                data.get("questions", []), actor=admin.username
+            )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(result), 201
@@ -270,7 +360,9 @@ def export_questions():
         csv_data = export_mock_questions_csv(user.role)
         response = make_response(csv_data)
         response.headers["Content-Type"] = "text/csv; charset=utf-8"
-        response.headers["Content-Disposition"] = "attachment; filename=secureai-question-bank.csv"
+        response.headers["Content-Disposition"] = (
+            "attachment; filename=secureai-question-bank.csv"
+        )
         return response
     return jsonify({"questions": questions}), 200
 
@@ -290,7 +382,9 @@ def review_queue():
     admin = _require_admin()
     if not admin:
         return jsonify({"error": "Admin access required"}), 403
-    return jsonify({"items": list_unanswered_questions(request.args.get("status"))}), 200
+    return jsonify(
+        {"items": list_unanswered_questions(request.args.get("status"))}
+    ), 200
 
 
 @chat_bp.route("/chat/questions/review-queue/<queue_id>", methods=["PATCH"])
@@ -319,7 +413,11 @@ def get_favorites():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    favorites = FavoriteQuestion.query.filter_by(user_id=user.id).order_by(FavoriteQuestion.created_at.desc()).all()
+    favorites = (
+        FavoriteQuestion.query.filter_by(user_id=user.id)
+        .order_by(FavoriteQuestion.created_at.desc())
+        .all()
+    )
     items = []
     for favorite in favorites:
         question = get_question(favorite.question_id)
@@ -341,7 +439,9 @@ def add_favorite(question_id):
     if not question or user.role not in question["allowed_roles"]:
         return jsonify({"error": "Question not available"}), 404
 
-    favorite = FavoriteQuestion.query.filter_by(user_id=user.id, question_id=question_id).first()
+    favorite = FavoriteQuestion.query.filter_by(
+        user_id=user.id, question_id=question_id
+    ).first()
     if not favorite:
         favorite = FavoriteQuestion(user_id=user.id, question_id=question_id)
         db.session.add(favorite)
@@ -356,7 +456,9 @@ def remove_favorite(question_id):
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    favorite = FavoriteQuestion.query.filter_by(user_id=user.id, question_id=question_id).first()
+    favorite = FavoriteQuestion.query.filter_by(
+        user_id=user.id, question_id=question_id
+    ).first()
     if favorite:
         db.session.delete(favorite)
         db.session.commit()
@@ -381,14 +483,18 @@ def submit_feedback():
     if not log or log.user_id != user.id:
         return jsonify({"error": "Audit log not found"}), 404
 
-    existing = QuestionFeedback.query.filter_by(audit_log_id=log.id, user_id=user.id).first()
+    existing = QuestionFeedback.query.filter_by(
+        audit_log_id=log.id, user_id=user.id
+    ).first()
     if existing:
         existing.value = value
         existing.note = note
         db.session.commit()
         return jsonify({"feedback": existing.to_dict()}), 200
 
-    feedback = QuestionFeedback(audit_log_id=log.id, user_id=user.id, value=value, note=note)
+    feedback = QuestionFeedback(
+        audit_log_id=log.id, user_id=user.id, value=value, note=note
+    )
     db.session.add(feedback)
     db.session.commit()
     return jsonify({"feedback": feedback.to_dict()}), 201
@@ -408,23 +514,37 @@ def export_conversation():
         .all()
     )
     buffer = io.StringIO()
-    writer = csv.DictWriter(buffer, fieldnames=[
-        "timestamp", "username", "role", "query", "response", "status", "risk_level", "risk_score",
-    ])
+    writer = csv.DictWriter(
+        buffer,
+        fieldnames=[
+            "timestamp",
+            "username",
+            "role",
+            "query",
+            "response",
+            "status",
+            "risk_level",
+            "risk_score",
+        ],
+    )
     writer.writeheader()
     for log in logs:
-        writer.writerow({
-            "timestamp": log.timestamp.isoformat(),
-            "username": log.username,
-            "role": log.role,
-            "query": log.query,
-            "response": log.filtered_response or log.ai_response or "",
-            "status": log.status,
-            "risk_level": log.risk_level,
-            "risk_score": log.risk_score,
-        })
+        writer.writerow(
+            {
+                "timestamp": log.timestamp.isoformat(),
+                "username": log.username,
+                "role": log.role,
+                "query": log.query,
+                "response": log.filtered_response or log.ai_response or "",
+                "status": log.status,
+                "risk_level": log.risk_level,
+                "risk_score": log.risk_score,
+            }
+        )
 
     response = make_response(buffer.getvalue())
     response.headers["Content-Type"] = "text/csv; charset=utf-8"
-    response.headers["Content-Disposition"] = "attachment; filename=secureai-conversation-export.csv"
+    response.headers["Content-Disposition"] = (
+        "attachment; filename=secureai-conversation-export.csv"
+    )
     return response

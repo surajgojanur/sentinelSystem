@@ -2,12 +2,13 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
-from flask_socketio import SocketIO
+from flask_socketio import SocketIO, join_room
 from dotenv import load_dotenv
 from sqlalchemy import inspect, text
 import os
 import secrets
 import string
+import sys
 from importlib import import_module
 
 load_dotenv()
@@ -18,6 +19,15 @@ socketio = SocketIO()
 _LOGIN_CODE_ALPHABET = string.ascii_uppercase + string.digits
 
 
+def _resolve_socketio_async_mode() -> str:
+    configured_mode = (os.getenv("SOCKETIO_ASYNC_MODE") or "").strip().lower()
+    if configured_mode:
+        return configured_mode
+    if sys.version_info >= (3, 14):
+        return "threading"
+    return "eventlet"
+
+
 def create_app():
     app = Flask(__name__)
 
@@ -26,7 +36,7 @@ def create_app():
     app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "dev-jwt-secret")
     app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "sqlite:///secureai.db")
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = False  # No expiry for demo
+    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = False
 
     # Extensions
     db.init_app(app)
@@ -35,12 +45,12 @@ def create_app():
     socketio.init_app(
         app,
         cors_allowed_origins="*",
-        async_mode="eventlet",
+        async_mode=_resolve_socketio_async_mode(),
         logger=False,
         engineio_logger=False,
     )
 
-    # Register blueprints
+    # Blueprints
     from app.routes.auth import auth_bp
     from app.routes.admin import admin_bp
     from app.routes.chat import chat_bp
@@ -50,8 +60,8 @@ def create_app():
     from app.routes.attendance import attendance_bp
     from app.routes.work_management import work_management_bp
     from app.routes.roles import roles_bp
-    from ghost_routes import ghost_bp
-    from attack_routes import attack_bp
+    from app.ghost_routes import ghost_bp
+    from app.attack_routes import attack_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(admin_bp, url_prefix="/api")
@@ -64,9 +74,22 @@ def create_app():
     app.register_blueprint(roles_bp, url_prefix="/api")
     app.register_blueprint(ghost_bp, url_prefix="/api")
     app.register_blueprint(attack_bp, url_prefix="/api")
+
     # Socket events
     from app.routes import socket_events  # noqa
     import_module("app.models")
+
+    # ── Socket.IO room management ─────────────────────────────
+    @socketio.on('join_admin_room')
+    def handle_join_admin(data=None):
+        join_room('admin_room')
+
+    @socketio.on('join_user_room')
+    def handle_join_user(data=None):
+        data = data or {}
+        user = data.get('user')
+        if user:
+            join_room(f"user_{user}")
 
     with app.app_context():
         db.create_all()
@@ -138,6 +161,7 @@ def _seed_demo_users():
         {"username": "hr_jane", "email": "hr@secureai.com", "password": "hr123", "role": "hr", "login_code": "HRCODE0001"},
         {"username": "intern_bob", "email": "intern@secureai.com", "password": "intern123", "role": "intern", "login_code": "INTCODE001"},
     ]
+
     for u in demo_users:
         existing_user = User.query.filter_by(username=u["username"]).first()
         role = Role.query.filter_by(name=_normalize_role_name(u["role"])).first()

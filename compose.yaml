@@ -2,6 +2,7 @@ services:
   backend:
     build:
       context: ./backend
+      network: host
     environment:
       PORT: 5001
       DEBUG: 0
@@ -20,6 +21,7 @@ services:
   frontend:
     build:
       context: ./frontend
+      network: host
     depends_on:
       - backend
     environment:

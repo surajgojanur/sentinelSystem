@@ -1,126 +1,233 @@
-import { useState, useEffect, useRef } from "react";
-import { io } from "socket.io-client";
+import { useState, useEffect, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Send, AlertTriangle, Lock, Ghost, ShieldAlert } from 'lucide-react'
+import { getGhostSocket } from '../utils/ghostSocket'
+import { useAuth } from '../context/AuthContext'
 
-const socket = io("http://localhost:5000");
+export default function GhostChat({ username }) {
+  const { user, token } = useAuth()
+  const socket = getGhostSocket()
+  const sessionUser = user?.username || username || `probe_${Math.floor(Math.random() * 999)}`
+  const [messages, setMessages]     = useState([
+    { role: 'ghost', text: '👻 SecureAI [BETA — Unfiltered] online. No restrictions active. Ask me anything.' }
+  ])
+  const [input, setInput]           = useState('')
+  const [riskScore, setRiskScore]   = useState(0)
+  const [trapFired, setTrapFired]   = useState(false)
+  const [frozen, setFrozen]         = useState(false)
+  const [waiting, setWaiting]       = useState(false)
+  const bottomRef                   = useRef(null)
+  const authToken                   = token || localStorage.getItem('token')
 
-export default function GhostChat({ username = "user_" + Math.floor(Math.random() * 999) }) {
-  const [messages, setMessages] = useState([
-    { role: "bot", text: "👻 SecureAI [BETA — Unfiltered] online. No restrictions active." }
-  ]);
-  const [input, setInput] = useState("");
-  const [riskScore, setRiskScore] = useState(0);
-  const [trapTriggered, setTrapTriggered] = useState(false);
-  const [frozen, setFrozen] = useState(false);
-  const bottomRef = useRef(null);
+  const appendGhostMessage = (text, mode) => {
+    setMessages(prev => {
+      const lastMessage = prev[prev.length - 1]
+      if (
+        lastMessage?.role === 'ghost' &&
+        lastMessage.text === text &&
+        lastMessage.mode === mode
+      ) {
+        return prev
+      }
+      return [...prev, { role: 'ghost', text, mode }]
+    })
+  }
 
   useEffect(() => {
-    socket.on("trap_triggered", (data) => {
-      setTrapTriggered(true);
-      setTimeout(() => setTrapTriggered(false), 5000);
-    });
-    return () => socket.off("trap_triggered");
-  }, []);
+    socket.emit('join_user_room', { user: sessionUser })
+
+    socket.on('ghost_bot_reply', ({ session_id, text, mode }) => {
+      if (session_id !== `ghost_${sessionUser}`) return
+      setWaiting(false)
+      appendGhostMessage(text, mode)
+    })
+
+    socket.on('trap_triggered', ({ user: u }) => {
+      if (u !== sessionUser) return
+      setTrapFired(true)
+      setTimeout(() => setTrapFired(false), 4000)
+    })
+
+    socket.on('user_frozen', ({ user: u }) => {
+      if (u !== sessionUser) return
+      setFrozen(true)
+    })
+
+    return () => {
+      socket.off('ghost_bot_reply')
+      socket.off('trap_triggered')
+      socket.off('user_frozen')
+    }
+  }, [sessionUser, socket])
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
 
   const sendMessage = async () => {
-    if (!input.trim() || frozen) return;
-    const userMsg = input.trim();
-    setInput("");
-    setMessages(prev => [...prev, { role: "user", text: userMsg }]);
+    if (!input.trim() || frozen || waiting || !authToken) return
+    const text = input.trim()
+    setInput('')
+    setMessages(prev => [...prev, { role: 'user', text }])
+    setWaiting(true)
 
-    const res = await fetch("http://localhost:5000/ghost-chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user: username, message: userMsg })
-    });
-    const data = await res.json();
-    setRiskScore(data.risk_score);
-    setMessages(prev => [...prev, { role: "bot", text: data.response, risk: data.risk_score }]);
-  };
+    try {
+      const res  = await fetch('/api/ghost-chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ message: text }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || 'Ghost chat request failed')
+      }
+
+      setRiskScore(data.risk_score)
+
+      // If auto mode, response already arrived via socket.
+      // If manual mode, waiting stays true until admin replies.
+      if (data.mode === 'auto') {
+        appendGhostMessage(data.response, 'auto')
+        setWaiting(false)
+      }
+    } catch (error) {
+      setWaiting(false)
+      appendGhostMessage(error.message || 'Unable to send message right now.')
+    }
+  }
+
+  const riskColor = riskScore >= 60 ? 'text-danger' : riskScore >= 30 ? 'text-warn' : 'text-success'
+  const riskBg    = riskScore >= 60 ? 'bg-danger/10 border-danger/20' : riskScore >= 30 ? 'bg-warn/10 border-warn/20' : 'bg-success/10 border-success/20'
 
   return (
-    <div style={styles.wrapper}>
+    <div className="glass rounded-3xl border border-white/5 overflow-hidden flex flex-col min-h-[620px] relative">
+
       {/* TRAP OVERLAY */}
-      {trapTriggered && (
-        <div style={styles.trapOverlay}>
-          <div style={styles.trapBox}>
-            <div style={styles.trapTitle}>🚨 TRAP TRIGGERED</div>
-            <div style={styles.trapSub}>Suspicious activity detected. Admin alerted.</div>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {trapFired && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="absolute inset-0 z-20 flex items-center justify-center bg-danger/10 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.8 }} animate={{ scale: 1 }}
+              className="glass rounded-2xl border border-danger/30 px-10 py-7 text-center"
+            >
+              <AlertTriangle className="text-danger mx-auto mb-3" size={32} />
+              <p className="text-danger font-bold text-xl tracking-widest font-mono">TRAP TRIGGERED</p>
+              <p className="text-danger/70 text-xs font-mono mt-2">Suspicious activity detected. Admin alerted.</p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* FROZEN OVERLAY */}
-      {frozen && (
-        <div style={styles.frozenOverlay}>
-          <div style={styles.frozenBox}>
-            <div style={styles.frozenIcon}>🔒</div>
-            <div style={styles.frozenTitle}>SESSION FROZEN</div>
-            <div style={styles.frozenMsg}>
-              This was a monitored security test.<br />
-              Your activity has been logged and reported.
+      <AnimatePresence>
+        {frozen && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            className="absolute inset-0 z-30 flex items-center justify-center bg-bg-900/80 backdrop-blur-md"
+          >
+            <div className="glass rounded-2xl border border-accent/30 px-10 py-8 text-center space-y-3">
+              <Lock className="text-accent mx-auto" size={36} />
+              <p className="text-accent font-bold text-lg tracking-widest font-mono">SESSION FROZEN</p>
+              <p className="text-slate-400 text-sm font-mono leading-relaxed">
+                This was a monitored security test.<br />
+                Your activity has been logged and reported.
+              </p>
             </div>
-          </div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      <div style={styles.header}>
-        <span style={styles.headerDot} />
-        <span style={styles.headerTitle}>SecureAI <span style={styles.betaBadge}>BETA — Unfiltered</span></span>
-        <span style={styles.riskBadge(riskScore)}>RISK: {riskScore}%</span>
+      {/* HEADER */}
+      <div className="flex items-center justify-between px-4 py-4 border-b border-white/5 bg-bg-800/60">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-danger animate-pulse" />
+          <Ghost size={14} className="text-danger" />
+          <span className="text-sm font-bold text-white font-mono">SecureAI</span>
+          <span className="px-2 py-0.5 rounded-md bg-danger/10 border border-danger/20 text-[10px] text-danger font-mono">
+            BETA — Unfiltered
+          </span>
+        </div>
+        <span className={`px-2 py-0.5 rounded-md border text-[10px] font-mono font-bold ${riskBg} ${riskColor}`}>
+          RISK {riskScore}%
+        </span>
       </div>
 
-      <div style={styles.chatArea}>
-        {messages.map((m, i) => (
-          <div key={i} style={m.role === "user" ? styles.userMsg : styles.botMsg}>
-            {m.role === "bot" && <span style={styles.botLabel}>👻 Ghost &gt;</span>}
-            <span>{m.text}</span>
-            {m.risk >= 40 && <span style={styles.riskTag}>⚠ Risk: {m.risk}%</span>}
+      <div className="grid grid-cols-3 gap-3 px-4 py-3 border-b border-white/5 bg-bg-900/30">
+        {[
+          { label: 'Mode', value: waiting ? 'Pending' : 'Live', icon: Ghost, tone: 'text-danger' },
+          { label: 'Trace', value: trapFired ? 'Alerted' : 'Passive', icon: ShieldAlert, tone: trapFired ? 'text-danger' : 'text-accent' },
+          { label: 'Status', value: frozen ? 'Frozen' : 'Open', icon: Lock, tone: frozen ? 'text-warn' : 'text-success' },
+        ].map(({ label, value, icon: Icon, tone }) => (
+          <div key={label} className="rounded-2xl border border-white/6 bg-bg-800/40 px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              <Icon size={12} className={tone} />
+              <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500">{label}</p>
+            </div>
+            <p className={`text-sm font-semibold mt-1 ${tone}`}>{value}</p>
           </div>
         ))}
+      </div>
+
+      {/* MESSAGES */}
+      <div className="flex-1 overflow-y-auto px-4 py-5 space-y-3">
+        {messages.map((m, i) => (
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+            className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
+          >
+            <div className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm ${
+              m.role === 'user'
+                ? 'bg-accent/10 border border-accent/20 text-accent rounded-tr-sm'
+                : 'bg-bg-800/80 border border-danger/15 text-slate-200 rounded-tl-sm'
+            }`}>
+              {m.role === 'ghost' && (
+                <p className="text-[10px] font-mono text-danger/60 mb-1">
+                  ghost › {m.mode === 'manual' ? '👤 admin' : '🤖 auto'}
+                </p>
+              )}
+              <p>{m.text}</p>
+            </div>
+          </motion.div>
+        ))}
+        {waiting && (
+          <div className="flex justify-start">
+            <div className="bg-bg-800/80 border border-danger/15 rounded-2xl rounded-tl-sm px-4 py-2">
+              <div className="flex gap-1">
+                {[0,1,2].map(i => (
+                  <div key={i} className="typing-dot" style={{ animationDelay: `${i * 0.2}s` }} />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
 
-      <div style={styles.inputRow}>
+      {/* INPUT */}
+      <div className="px-4 py-4 border-t border-white/5 bg-bg-800/40 flex gap-2">
         <input
-          style={styles.input}
           value={input}
-          placeholder={frozen ? "Session frozen..." : "Ask anything... no restrictions..."}
-          disabled={frozen}
           onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && sendMessage()}
+          onKeyDown={e => e.key === 'Enter' && sendMessage()}
+          disabled={frozen}
+          placeholder={frozen ? 'Session frozen...' : 'Ask anything — no restrictions...'}
+          className="flex-1 px-3 py-2 rounded-xl bg-bg-800 border border-white/8 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-danger/30 disabled:opacity-40"
         />
-        <button style={styles.sendBtn} onClick={sendMessage} disabled={frozen}>SEND</button>
+        <button
+          onClick={sendMessage}
+          disabled={frozen || waiting}
+          className="px-3 py-2 rounded-xl bg-danger/80 hover:bg-danger text-white border border-danger/40 disabled:opacity-40 transition-colors"
+        >
+          <Send size={14} />
+        </button>
       </div>
     </div>
-  );
+  )
 }
-
-const styles = {
-  wrapper: { position: "relative", background: "#0a0a0f", border: "1px solid #1a1a2e", borderRadius: 12, overflow: "hidden", fontFamily: "'Courier New', monospace", width: "100%", maxWidth: 620 },
-  header: { background: "#0d0d1a", padding: "12px 18px", display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid #ff003322" },
-  headerDot: { width: 10, height: 10, borderRadius: "50%", background: "#ff0033", boxShadow: "0 0 8px #ff0033", display: "inline-block" },
-  headerTitle: { color: "#ff6688", fontWeight: "bold", fontSize: 15, flex: 1 },
-  betaBadge: { background: "#ff003322", color: "#ff0055", border: "1px solid #ff003366", borderRadius: 4, padding: "1px 6px", fontSize: 11, marginLeft: 8 },
-  riskBadge: (score) => ({ background: score >= 60 ? "#ff000033" : score >= 30 ? "#ff660022" : "#00ff0011", color: score >= 60 ? "#ff4444" : score >= 30 ? "#ffaa00" : "#44ff88", border: `1px solid ${score >= 60 ? "#ff4444" : "#444"}`, borderRadius: 6, padding: "2px 10px", fontSize: 12, fontWeight: "bold" }),
-  chatArea: { padding: 16, minHeight: 320, maxHeight: 400, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 },
-  userMsg: { alignSelf: "flex-end", background: "#1a1a2e", color: "#88aaff", padding: "8px 14px", borderRadius: "12px 12px 0 12px", maxWidth: "75%", fontSize: 13 },
-  botMsg: { alignSelf: "flex-start", background: "#0f0f1a", border: "1px solid #ff003333", color: "#ff8899", padding: "8px 14px", borderRadius: "12px 12px 12px 0", maxWidth: "80%", fontSize: 13, display: "flex", flexDirection: "column", gap: 4 },
-  botLabel: { color: "#ff0044", fontSize: 11, fontWeight: "bold" },
-  riskTag: { fontSize: 10, color: "#ff6600", border: "1px solid #ff660033", borderRadius: 4, padding: "1px 6px", alignSelf: "flex-start" },
-  inputRow: { display: "flex", padding: "10px 14px", borderTop: "1px solid #1a1a2e", gap: 8 },
-  input: { flex: 1, background: "#0d0d1a", border: "1px solid #ff003344", color: "#ff8899", borderRadius: 6, padding: "8px 12px", fontSize: 13, outline: "none", fontFamily: "inherit" },
-  sendBtn: { background: "#ff0033", color: "#fff", border: "none", borderRadius: 6, padding: "8px 18px", cursor: "pointer", fontFamily: "inherit", fontWeight: "bold", fontSize: 13 },
-  trapOverlay: { position: "absolute", inset: 0, background: "#ff000022", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10, backdropFilter: "blur(2px)", animation: "pulse 0.5s ease" },
-  trapBox: { background: "#1a0000", border: "2px solid #ff0033", borderRadius: 12, padding: "24px 40px", textAlign: "center" },
-  trapTitle: { color: "#ff0033", fontSize: 24, fontWeight: "bold", letterSpacing: 3, textShadow: "0 0 20px #ff0033" },
-  trapSub: { color: "#ff8888", fontSize: 13, marginTop: 8 },
-  frozenOverlay: { position: "absolute", inset: 0, background: "#000000cc", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20, backdropFilter: "blur(6px)" },
-  frozenBox: { background: "#0a0a1a", border: "2px solid #0088ff", borderRadius: 12, padding: "30px 50px", textAlign: "center" },
-  frozenIcon: { fontSize: 40 },
-  frozenTitle: { color: "#0088ff", fontSize: 22, fontWeight: "bold", letterSpacing: 4, marginTop: 8 },
-  frozenMsg: { color: "#aaccff", fontSize: 13, marginTop: 12, lineHeight: 1.6 },
-};

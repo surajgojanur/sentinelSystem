@@ -1,7 +1,10 @@
-import eventlet
-eventlet.monkey_patch()
-
 import os
+import sys
+
+if sys.version_info < (3, 14):
+    import eventlet
+
+    eventlet.monkey_patch()
 
 from app import create_app, socketio
 
