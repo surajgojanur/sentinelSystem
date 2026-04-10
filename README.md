@@ -243,6 +243,16 @@ This repo now includes the first slice of an advanced work assignment and KPI tr
   Create an assignment. Allowed for `admin` and `hr`.
 - `GET /api/work/assignments`
   List assignments. `admin` and `hr` can list broadly; assignees see only their own assignments.
+- `GET /api/work/board`
+  Return the manager work-board view with stable board columns and assignment payloads.
+- `PATCH /api/work/assignments/<assignment_id>/status`
+  Update a board-visible assignment status. Allowed for `admin` and `hr`.
+- `POST /api/work/escalations`
+  Create an escalation for an assignment. Allowed for `admin` and `hr`.
+- `GET /api/work/escalations`
+  List escalations for managers.
+- `PATCH /api/work/escalations/<escalation_id>`
+  Resolve an escalation.
 - `POST /api/work/assignments/<assignment_id>/progress`
   Submit a progress update. Allowed only for the assignee.
 - `GET /api/work/assignments/<assignment_id>/kpi`
@@ -268,6 +278,25 @@ Backend coverage was added for the first slice of the module. The tests cover:
 - malformed due date and invalid payload handling
 - invalid assignment ID handling
 - zero-target and over-completion KPI edge cases
+- API contract coverage for critical auth, user, assignment, board, and escalation endpoints
+
+### API Contract Tests
+`backend/tests/test_api_contract.py` adds a lightweight contract suite around the frontend-critical API responses. These tests call the real Flask test client, validate status codes, and assert stable response keys and value types for:
+
+- `POST /api/auth/login`
+- `GET /api/users`
+- `GET /api/work/assignments`
+- `GET /api/work/board`
+- `POST /api/work/assignments`
+- `PATCH /api/work/assignments/<id>/status`
+- `POST /api/work/escalations`
+- `GET /api/work/escalations`
+- `PATCH /api/work/escalations/<id>`
+
+Why this matters:
+- it catches breaking payload changes before frontend integration fails
+- it gives PR validation a stable check for response shape regressions
+- it stays deterministic because it uses existing pytest fixtures and local test data only
 
 Frontend automated tests were not added because the repo does not currently have a lightweight frontend test harness.
 
@@ -293,6 +322,13 @@ cd backend
 python3 -m pytest
 ```
 
+Run only the API contract suite:
+
+```bash
+cd backend
+python3 -m pytest tests/test_api_contract.py
+```
+
 ## Validation / CI
 
 ### What Runs Automatically
@@ -300,11 +336,14 @@ This repo now includes a minimal CI workflow for `push` and `pull_request`.
 
 Current automated checks:
 - backend test suite via `pytest`
+- API contract suite for frontend-critical endpoints
 - frontend production build via `npm run build`
 
 ### CI Jobs
 - `Backend Tests`
   Runs `python -m pytest -q` in `backend`
+- `API Contract Tests`
+  Runs `python -m pytest -q tests/test_api_contract.py` in `backend`
 - `Frontend Build`
   Runs `npm ci` and `npm run build` in `frontend`
 
@@ -321,6 +360,7 @@ Equivalent manual commands:
 cd backend
 pip install -r requirements.txt
 python3 -m pytest -q
+python3 -m pytest -q tests/test_api_contract.py
 
 cd ../frontend
 npm ci
@@ -329,6 +369,7 @@ npm run build
 
 ### Current Coverage
 - backend work-management tests and related behavior
+- backend API contract tests for frontend-critical response schemas
 - frontend integration/build validation
 
 ### Current Limitations

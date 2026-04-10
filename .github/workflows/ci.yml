@@ -3,14 +3,21 @@ name: CI
 on:
   pull_request:
   push:
+    branches:
+      - main
+      - master
 
 jobs:
   backend-tests:
     name: Backend Tests
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: backend
+
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -19,22 +26,24 @@ jobs:
           python-version: "3.12"
 
       - name: Install backend dependencies
-        working-directory: backend
         run: pip install -r requirements.txt
 
       - name: Run backend tests
-        working-directory: backend
         run: python -m pytest -q
 
   frontend-build:
     name: Frontend Build
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: frontend
+
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -42,9 +51,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
-        working-directory: frontend
         run: npm ci
 
       - name: Build frontend
-        working-directory: frontend
         run: npm run build
