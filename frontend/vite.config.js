@@ -18,6 +18,7 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
       },
+      // No extra entries needed — everything goes through /api already
     },
   },
 })

@@ -21,6 +21,9 @@ def _get_user_from_token(token: str):
 @socketio.on("connect")
 def handle_connect():
     token = request.args.get("token", "")
+    if not token:
+        return
+
     user = _get_user_from_token(token)
     if not user:
         return False  # Reject connection

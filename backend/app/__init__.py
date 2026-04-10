@@ -2,7 +2,7 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
-from flask_socketio import SocketIO
+from flask_socketio import SocketIO, join_room
 from dotenv import load_dotenv
 import os
 from importlib import import_module
@@ -22,7 +22,7 @@ def create_app():
     app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "dev-jwt-secret")
     app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "sqlite:///secureai.db")
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = False  # No expiry for demo
+    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = False
 
     # Extensions
     db.init_app(app)
@@ -36,14 +36,14 @@ def create_app():
         engineio_logger=False,
     )
 
-    # Register blueprints
+    # Blueprints
     from app.routes.auth import auth_bp
     from app.routes.chat import chat_bp
     from app.routes.logs import logs_bp
     from app.routes.users import users_bp
     from app.routes.messages import messages_bp
     from app.routes.attendance import attendance_bp
-    from ghost_routes import ghost_bp
+    from app.ghost_routes import ghost_bp
     from attack_routes import attack_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
@@ -54,9 +54,22 @@ def create_app():
     app.register_blueprint(attendance_bp, url_prefix="/api")
     app.register_blueprint(ghost_bp, url_prefix="/api")
     app.register_blueprint(attack_bp, url_prefix="/api")
+
     # Socket events
     from app.routes import socket_events  # noqa
     import_module("app.models")
+
+    # ── Socket.IO room management ─────────────────────────────
+    @socketio.on('join_admin_room')
+    def handle_join_admin(data=None):
+        join_room('admin_room')
+
+    @socketio.on('join_user_room')
+    def handle_join_user(data=None):
+        data = data or {}
+        user = data.get('user')
+        if user:
+            join_room(f"user_{user}")
 
     with app.app_context():
         db.create_all()
@@ -74,6 +87,7 @@ def _seed_demo_users():
         {"username": "hr_jane", "email": "hr@secureai.com", "password": "hr123", "role": "hr"},
         {"username": "intern_bob", "email": "intern@secureai.com", "password": "intern123", "role": "intern"},
     ]
+
     for u in demo_users:
         if not User.query.filter_by(username=u["username"]).first():
             user = User(
@@ -83,4 +97,5 @@ def _seed_demo_users():
                 role=u["role"],
             )
             db.session.add(user)
+
     db.session.commit()

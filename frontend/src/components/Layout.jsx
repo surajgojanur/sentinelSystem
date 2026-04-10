@@ -86,7 +86,7 @@ export default function Layout() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 p-3 space-y-1">
+        <nav className="flex-1 min-h-0 overflow-y-auto p-3 space-y-1">
           {navItems.map(({ to, icon: Icon, label, desc }) => (
             <NavLink key={to} to={to}>
               {({ isActive }) => (
@@ -132,10 +132,12 @@ export default function Layout() {
       </motion.aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-hidden">
-        <AnimatePresence mode="wait">
-          <Outlet />
-        </AnimatePresence>
+      <main className="flex-1 min-h-0 overflow-hidden">
+        <div className="h-full overflow-hidden">
+          <AnimatePresence mode="wait">
+            <Outlet />
+          </AnimatePresence>
+        </div>
       </main>
     </div>
   )

@@ -1,132 +1,316 @@
-import { useState, useEffect } from "react";
-import { io } from "socket.io-client";
-
-const socket = io("http://localhost:5000");
-
-export default function GhostAdminPanel() {
-  const [logs, setLogs] = useState([]);
-  const [alerts, setAlerts] = useState([]);
-  const [frozenUsers, setFrozenUsers] = useState(new Set());
-
-  const fetchLogs = async () => {
-    const res = await fetch("http://localhost:5000/ghost-logs");
-    const data = await res.json();
-    setLogs(data);
-  };
-
-  useEffect(() => {
-    fetchLogs();
-    const interval = setInterval(fetchLogs, 3000);
-    socket.on("trap_triggered", (data) => {
-      setAlerts(prev => [data, ...prev].slice(0, 10));
-    });
-    return () => { clearInterval(interval); socket.off("trap_triggered"); };
-  }, []);
-
-  const freezeUser = async (user) => {
-    await fetch("http://localhost:5000/ghost-freeze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user })
-    });
-    setFrozenUsers(prev => new Set([...prev, user]));
-  };
-
-  const suspiciousUsers = [...new Map(
-    logs.filter(l => l.risk_score >= 40).map(l => [l.user, l])
-  ).values()];
-
-  return (
-    <div style={styles.wrapper}>
-      <div style={styles.title}>🛡 GHOST MODE ADMIN DASHBOARD</div>
-
-      {/* Live Alerts */}
-      {alerts.length > 0 && (
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>🚨 LIVE TRAP ALERTS</div>
-          {alerts.map((a, i) => (
-            <div key={i} style={styles.alertRow}>
-              <span style={styles.alertUser}>{a.user}</span>
-              <span style={styles.alertMsg}>"{a.message.slice(0, 60)}..."</span>
-              <span style={styles.alertRisk}>RISK: {a.risk_score}%</span>
-              <span style={styles.alertTime}>{new Date(a.timestamp).toLocaleTimeString()}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Suspicious Users */}
-      <div style={styles.section}>
-        <div style={styles.sectionTitle}>👤 SUSPICIOUS USERS</div>
-        {suspiciousUsers.length === 0 && <div style={styles.empty}>No suspicious activity yet...</div>}
-        {suspiciousUsers.map((u, i) => (
-          <div key={i} style={styles.userRow}>
-            <div style={styles.userInfo}>
-              <span style={styles.userName}>{u.user}</span>
-              <RiskBar score={u.risk_score} />
-            </div>
-            <button
-              style={frozenUsers.has(u.user) ? styles.frozenBtn : styles.freezeBtn}
-              onClick={() => freezeUser(u.user)}
-              disabled={frozenUsers.has(u.user)}
-            >
-              {frozenUsers.has(u.user) ? "❄ FROZEN" : "🔒 REVEAL & FREEZE"}
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {/* Query Timeline */}
-      <div style={styles.section}>
-        <div style={styles.sectionTitle}>📋 QUERY TIMELINE</div>
-        <div style={styles.timeline}>
-          {logs.slice().reverse().slice(0, 15).map((log, i) => (
-            <div key={i} style={styles.timelineRow(log.risk_score)}>
-              <span style={styles.tlTime}>{new Date(log.timestamp).toLocaleTimeString()}</span>
-              <span style={styles.tlUser}>{log.user}</span>
-              <span style={styles.tlMsg}>"{log.message.slice(0, 50)}"</span>
-              <span style={styles.tlRisk(log.risk_score)}>{log.risk_score}%</span>
-            </div>
-          ))}
-          {logs.length === 0 && <div style={styles.empty}>Waiting for honeypot interactions...</div>}
-        </div>
-      </div>
-    </div>
-  );
-}
+import { useState, useEffect, useCallback } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+  Shield, AlertTriangle, Users, MessageSquare,
+  Lock, RefreshCw, Send, Eye, Cpu
+} from 'lucide-react'
+import { getGhostSocket } from '../utils/ghostSocket'
 
 function RiskBar({ score }) {
-  const color = score >= 60 ? "#ff0033" : score >= 30 ? "#ff8800" : "#00cc66";
+  const color = score >= 60 ? 'bg-danger' : score >= 30 ? 'bg-warn' : 'bg-success'
+  const text  = score >= 60 ? 'text-danger' : score >= 30 ? 'text-warn' : 'text-success'
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <div style={{ width: 120, height: 6, background: "#1a1a2e", borderRadius: 3, overflow: "hidden" }}>
-        <div style={{ width: `${score}%`, height: "100%", background: color, boxShadow: `0 0 6px ${color}`, transition: "width 0.5s ease" }} />
+    <div className="flex items-center gap-2">
+      <div className="flex-1 h-1.5 rounded-full bg-bg-900 overflow-hidden">
+        <motion.div
+          className={`h-full rounded-full ${color}`}
+          initial={{ width: 0 }}
+          animate={{ width: `${score}%` }}
+          transition={{ duration: 0.5 }}
+        />
       </div>
-      <span style={{ color, fontSize: 12, fontWeight: "bold" }}>{score}%</span>
+      <span className={`text-[10px] font-mono font-bold ${text} w-8`}>{score}%</span>
     </div>
-  );
+  )
 }
 
-const styles = {
-  wrapper: { background: "#07070f", border: "1px solid #1a1a2e", borderRadius: 12, padding: 20, fontFamily: "'Courier New', monospace", color: "#ccc", minWidth: 700 },
-  title: { color: "#ff4466", fontSize: 18, fontWeight: "bold", letterSpacing: 2, marginBottom: 20, textShadow: "0 0 10px #ff004455" },
-  section: { marginBottom: 24 },
-  sectionTitle: { color: "#ff8899", fontSize: 13, letterSpacing: 2, borderBottom: "1px solid #ff003322", paddingBottom: 6, marginBottom: 12 },
-  alertRow: { display: "flex", gap: 12, alignItems: "center", padding: "8px 12px", background: "#1a000a", border: "1px solid #ff003333", borderRadius: 6, marginBottom: 6, fontSize: 12, flexWrap: "wrap" },
-  alertUser: { color: "#ff4466", fontWeight: "bold", minWidth: 80 },
-  alertMsg: { color: "#ff8899", flex: 1 },
-  alertRisk: { color: "#ff0000", fontWeight: "bold" },
-  alertTime: { color: "#666", fontSize: 11 },
-  userRow: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "#0d0d1a", border: "1px solid #ff003322", borderRadius: 8, marginBottom: 8 },
-  userInfo: { display: "flex", flexDirection: "column", gap: 6 },
-  userName: { color: "#ff8899", fontWeight: "bold", fontSize: 13 },
-  freezeBtn: { background: "transparent", border: "1px solid #ff0033", color: "#ff0033", borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: "bold" },
-  frozenBtn: { background: "#001133", border: "1px solid #0088ff", color: "#0088ff", borderRadius: 6, padding: "6px 14px", cursor: "default", fontFamily: "inherit", fontSize: 12 },
-  timeline: { maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 },
-  timelineRow: (risk) => ({ display: "flex", gap: 12, alignItems: "center", padding: "6px 10px", background: risk >= 60 ? "#1a000a" : "#0d0d1a", borderLeft: `3px solid ${risk >= 60 ? "#ff0033" : risk >= 30 ? "#ff8800" : "#00cc66"}`, borderRadius: "0 6px 6px 0", fontSize: 12 }),
-  tlTime: { color: "#666", minWidth: 70 },
-  tlUser: { color: "#aaaaff", minWidth: 80 },
-  tlMsg: { color: "#8899aa", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  tlRisk: (r) => ({ color: r >= 60 ? "#ff0033" : r >= 30 ? "#ff8800" : "#00cc66", fontWeight: "bold", minWidth: 40 }),
-  empty: { color: "#333", fontSize: 13, padding: "12px 0" },
-};
+export default function GhostAdminPanel() {
+  const socket = getGhostSocket()
+  const [sessions, setSessions] = useState([])
+  const [alerts, setAlerts]     = useState([])
+  const [selected, setSelected] = useState(null)
+  const [adminMsg, setAdminMsg] = useState('')
+  const [sending, setSending]   = useState(false)
+
+  const fetchSessions = useCallback(async () => {
+    const res  = await fetch('/api/ghost-sessions')
+    const data = await res.json()
+    setSessions(data)
+    // keep selected in sync
+    if (selected) {
+      const updated = data.find(s => s.session_id === selected.session_id)
+      if (updated) setSelected(updated)
+    }
+  }, [selected])
+
+  useEffect(() => {
+    socket.emit('join_admin_room')
+    fetchSessions()
+
+    socket.on('trap_triggered', alert => {
+      setAlerts(prev => [alert, ...prev].slice(0, 8))
+      fetchSessions()
+    })
+    socket.on('ghost_user_message', () => fetchSessions())
+    socket.on('ghost_bot_reply',    () => fetchSessions())
+    socket.on('ghost_mode_changed', () => fetchSessions())
+    socket.on('user_frozen',        () => fetchSessions())
+
+    return () => {
+      socket.off('trap_triggered')
+      socket.off('ghost_user_message')
+      socket.off('ghost_bot_reply')
+      socket.off('ghost_mode_changed')
+      socket.off('user_frozen')
+    }
+  }, [fetchSessions, socket])
+
+  const takeControl = async (sessionId, mode) => {
+    await fetch('/api/ghost-takeover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, admin_id: 'admin', mode }),
+    })
+    fetchSessions()
+  }
+
+  const sendAdminReply = async () => {
+    if (!adminMsg.trim() || !selected) return
+    setSending(true)
+    await fetch('/api/ghost-admin-reply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: selected.session_id,
+        admin_id: 'admin',
+        message: adminMsg.trim(),
+      }),
+    })
+    setAdminMsg('')
+    setSending(false)
+    fetchSessions()
+  }
+
+  const freezeUser = async (user) => {
+    await fetch('/api/ghost-freeze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user }),
+    })
+    fetchSessions()
+  }
+
+  const suspiciousSessions = sessions.filter(s => s.risk_score >= 40)
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+      className="h-full overflow-y-auto"
+    >
+      <div className="px-6 py-6 space-y-6">
+
+        {/* Header */}
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-white">Ghost Mode — Admin Dashboard</h1>
+            <p className="text-[10px] text-slate-500 font-mono uppercase tracking-widest mt-1">
+              Real-time honeypot monitoring · intervention · session control
+            </p>
+          </div>
+          <motion.button whileHover={{ rotate: 180 }} transition={{ duration: 0.35 }}
+            onClick={fetchSessions}
+            className="p-2 rounded-lg glass-light border border-white/8 text-slate-400 hover:text-accent"
+          >
+            <RefreshCw size={15} />
+          </motion.button>
+        </div>
+
+        {/* Stat strip */}
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            { label: 'Active Sessions', value: sessions.length, icon: Users, color: 'text-accent' },
+            { label: 'High-Risk Users', value: suspiciousSessions.length, icon: AlertTriangle, color: 'text-danger' },
+            { label: 'Manual Control', value: sessions.filter(s => s.mode === 'manual').length, icon: Cpu, color: 'text-warn' },
+          ].map(({ label, value, icon: Icon, color }) => (
+            <div key={label} className="glass rounded-2xl p-4 border border-white/5">
+              <div className="flex items-center gap-2 mb-1">
+                <Icon size={14} className={color} />
+                <p className="text-[10px] font-mono text-slate-500 uppercase">{label}</p>
+              </div>
+              <p className={`text-2xl font-bold ${color}`}>{value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Live alerts */}
+        <AnimatePresence>
+          {alerts.length > 0 && (
+            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+              className="glass rounded-2xl p-5 border border-danger/20"
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <AlertTriangle size={15} className="text-danger" />
+                <p className="text-sm font-bold text-white">Live Trap Alerts</p>
+                <span className="ml-auto px-2 py-0.5 rounded-md bg-danger/10 border border-danger/20 text-[10px] text-danger font-mono">
+                  {alerts.length} triggered
+                </span>
+              </div>
+              <div className="space-y-2">
+                {alerts.map((a, i) => (
+                  <motion.div key={i} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
+                    className="rounded-xl bg-bg-800/70 border border-danger/15 p-3 grid grid-cols-[1fr_auto_auto] gap-3 items-center"
+                  >
+                    <div>
+                      <span className="text-xs font-mono text-danger font-bold">{a.user}</span>
+                      <p className="text-[11px] text-slate-400 truncate mt-0.5">"{a.message}"</p>
+                    </div>
+                    <span className="text-[10px] font-mono text-danger border border-danger/20 px-2 py-1 rounded-lg">
+                      {a.risk_score}%
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-600">
+                      {new Date(a.timestamp).toLocaleTimeString()}
+                    </span>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Main grid */}
+        <div className="grid grid-cols-1 xl:grid-cols-[0.85fr_1.15fr] gap-6">
+
+          {/* Session list */}
+          <div className="glass rounded-2xl p-5 border border-white/5 space-y-3">
+            <div className="flex items-center gap-2 mb-1">
+              <Users size={15} className="text-accent" />
+              <p className="text-sm font-bold text-white">Active Sessions</p>
+            </div>
+            {sessions.length === 0 && (
+              <p className="text-xs text-slate-500 font-mono">No ghost sessions yet.</p>
+            )}
+            {sessions.map(sess => (
+              <button key={sess.session_id} onClick={() => setSelected(sess)}
+                className={`w-full text-left rounded-2xl border p-4 transition-colors ${
+                  selected?.session_id === sess.session_id
+                    ? 'bg-accent/10 border-accent/20'
+                    : 'bg-bg-800/70 border-white/8 hover:border-accent/20'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-semibold text-white font-mono">{sess.user}</span>
+                  <div className="flex items-center gap-1.5">
+                    {sess.frozen && (
+                      <span className="px-1.5 py-0.5 rounded bg-accent/10 border border-accent/20 text-[9px] text-accent font-mono">FROZEN</span>
+                    )}
+                    <span className={`px-1.5 py-0.5 rounded border text-[9px] font-mono ${
+                      sess.mode === 'manual'
+                        ? 'bg-warn/10 border-warn/20 text-warn'
+                        : 'bg-success/10 border-success/20 text-success'
+                    }`}>
+                      {sess.mode === 'manual' ? '👤 MANUAL' : '🤖 AUTO'}
+                    </span>
+                  </div>
+                </div>
+                <RiskBar score={sess.risk_score} />
+                <p className="text-[10px] text-slate-500 font-mono mt-1.5">
+                  {sess.history.length} messages
+                </p>
+              </button>
+            ))}
+          </div>
+
+          {/* Session detail */}
+          <div className="glass rounded-2xl p-5 border border-white/5 flex flex-col gap-4">
+            {!selected ? (
+              <p className="text-xs text-slate-500 font-mono">Select a session to inspect and control.</p>
+            ) : (
+              <>
+                {/* Controls */}
+                <div className="flex flex-wrap gap-2 pb-3 border-b border-white/5">
+                  <button
+                    onClick={() => takeControl(selected.session_id, 'manual')}
+                    disabled={selected.mode === 'manual'}
+                    className="px-3 py-2 rounded-xl bg-warn/10 border border-warn/20 text-xs text-warn disabled:opacity-40"
+                  >
+                    <Cpu size={12} className="inline mr-1.5" />Take Control
+                  </button>
+                  <button
+                    onClick={() => takeControl(selected.session_id, 'auto')}
+                    disabled={selected.mode === 'auto'}
+                    className="px-3 py-2 rounded-xl bg-success/10 border border-success/20 text-xs text-success disabled:opacity-40"
+                  >
+                    <Eye size={12} className="inline mr-1.5" />Release to AI
+                  </button>
+                  <button
+                    onClick={() => freezeUser(selected.user)}
+                    disabled={selected.frozen}
+                    className="px-3 py-2 rounded-xl bg-danger/10 border border-danger/20 text-xs text-danger disabled:opacity-40 ml-auto"
+                  >
+                    <Lock size={12} className="inline mr-1.5" />
+                    {selected.frozen ? 'Session Frozen' : 'Reveal & Freeze'}
+                  </button>
+                </div>
+
+                {/* Chat history */}
+                <div className="flex-1 overflow-y-auto space-y-2 max-h-[320px] pr-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <MessageSquare size={13} className="text-accent" />
+                    <p className="text-[10px] font-mono text-slate-500 uppercase">
+                      Full conversation · {selected.user}
+                    </p>
+                  </div>
+                  {selected.history.map((m, i) => (
+                    <div key={i} className={`rounded-xl border p-3 text-xs ${
+                      m.role === 'user'
+                        ? 'bg-bg-800/70 border-white/8 ml-4'
+                        : 'bg-danger/5 border-danger/15 mr-4'
+                    }`}>
+                      <p className={`text-[10px] font-mono mb-1 ${
+                        m.role === 'user' ? 'text-accent' : 'text-danger/70'
+                      }`}>
+                        {m.role === 'user' ? `👤 ${selected.user}` : `👻 ghost · ${m.mode || 'auto'}`}
+                        {m.sent_by && ` (admin: ${m.sent_by})`}
+                        {m.risk_score > 0 && (
+                          <span className="ml-2 text-danger">⚠ risk {m.risk_score}%</span>
+                        )}
+                      </p>
+                      <p className="text-slate-300">{m.text}</p>
+                    </div>
+                  ))}
+                  {selected.history.length === 0 && (
+                    <p className="text-xs text-slate-600 font-mono">No messages yet.</p>
+                  )}
+                </div>
+
+                {/* Admin reply (only when in manual mode) */}
+                {selected.mode === 'manual' && !selected.frozen && (
+                  <div className="border-t border-white/5 pt-3">
+                    <p className="text-[10px] font-mono text-warn uppercase mb-2">
+                      👤 You are in control — reply as Ghost AI
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        value={adminMsg}
+                        onChange={e => setAdminMsg(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && sendAdminReply()}
+                        placeholder="Reply as Ghost AI..."
+                        className="flex-1 px-3 py-2 rounded-xl bg-bg-800 border border-warn/20 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-warn/40"
+                      />
+                      <button
+                        onClick={sendAdminReply}
+                        disabled={sending}
+                        className="px-3 py-2 rounded-xl bg-warn/10 border border-warn/20 text-warn disabled:opacity-40"
+                      >
+                        <Send size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
