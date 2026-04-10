@@ -13,7 +13,7 @@ import GhostModePage from './pages/GhostModePage'
 import AttackSimPage from './pages/AttackSimPage'
 import AdminCreateUserPage from './pages/AdminCreateUserPage'
 
-function ProtectedRoute({ children, adminOnly = false }) {
+function ProtectedRoute({ children, adminOnly = false, managerOnly = false }) {
   const { user, loading } = useAuth()
   if (loading) return (
     <div className="flex h-full items-center justify-center bg-bg-900">
@@ -26,6 +26,7 @@ function ProtectedRoute({ children, adminOnly = false }) {
   )
   if (!user) return <Navigate to="/login" replace />
   if (adminOnly && user.role !== 'admin') return <Navigate to="/chat" replace />
+  if (managerOnly && !['admin', 'hr'].includes(user.role)) return <Navigate to="/my-work" replace />
   return children
 }
 
@@ -52,6 +53,13 @@ function AppRoutes() {
         <Route path="chat" element={<ChatPage />} />
         <Route path="messages" element={<PrivateChatPage />} />
         <Route path="attendance" element={<FaceAttendancePage />} />
+        <Route path="my-work" element={<MyWorkPage />} />
+
+        <Route path="work-assignments" element={
+          <ProtectedRoute managerOnly>
+            <WorkAssignmentsPage />
+          </ProtectedRoute>
+        } />
 
         <Route path="user-access" element={
           <ProtectedRoute adminOnly>

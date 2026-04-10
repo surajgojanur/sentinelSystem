@@ -26,6 +26,10 @@ export default function Layout() {
     { to: '/chat', icon: Cpu, label: 'AI Chatbot', desc: 'Governed AI' },
     { to: '/messages', icon: MessageSquare, label: 'Secure Msg', desc: 'Private comms' },
     { to: '/attendance', icon: ScanFace, label: 'Attendance', desc: 'Face check-in/out' },
+    { to: '/my-work', icon: Briefcase, label: 'My Work', desc: 'Assigned tasks' },
+    ...(['admin', 'hr'].includes(user?.role)
+      ? [{ to: '/work-assignments', icon: ClipboardList, label: 'Work Assign', desc: 'Manager workspace' }]
+      : []),
     ...(user?.role === 'admin'
       ? [
           { to: '/user-access', icon: UserPlus, label: 'User Access', desc: 'Create accounts' },
