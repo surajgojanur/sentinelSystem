@@ -5,6 +5,7 @@ import {
   Lock, RefreshCw, Send, Eye, Cpu
 } from 'lucide-react'
 import { getGhostSocket } from '../utils/ghostSocket'
+import { useAuth } from '../context/AuthContext'
 
 function RiskBar({ score }) {
   const color = score >= 60 ? 'bg-danger' : score >= 30 ? 'bg-warn' : 'bg-success'
@@ -25,23 +26,34 @@ function RiskBar({ score }) {
 }
 
 export default function GhostAdminPanel() {
+  const { token } = useAuth()
   const socket = getGhostSocket()
   const [sessions, setSessions] = useState([])
   const [alerts, setAlerts]     = useState([])
   const [selected, setSelected] = useState(null)
   const [adminMsg, setAdminMsg] = useState('')
   const [sending, setSending]   = useState(false)
+  const authToken               = token || localStorage.getItem('token')
+
+  const getAuthHeaders = useCallback(() => ({
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${authToken}`,
+  }), [authToken])
 
   const fetchSessions = useCallback(async () => {
-    const res  = await fetch('/api/ghost-sessions')
+    if (!authToken) return
+    const res  = await fetch('/api/ghost-sessions', {
+      headers: { Authorization: `Bearer ${authToken}` },
+    })
     const data = await res.json()
+    if (!res.ok) return
     setSessions(data)
     // keep selected in sync
     if (selected) {
       const updated = data.find(s => s.session_id === selected.session_id)
       if (updated) setSelected(updated)
     }
-  }, [selected])
+  }, [authToken, selected])
 
   useEffect(() => {
     socket.emit('join_admin_room')
@@ -66,23 +78,23 @@ export default function GhostAdminPanel() {
   }, [fetchSessions, socket])
 
   const takeControl = async (sessionId, mode) => {
+    if (!authToken) return
     await fetch('/api/ghost-takeover', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: sessionId, admin_id: 'admin', mode }),
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ session_id: sessionId, mode }),
     })
     fetchSessions()
   }
 
   const sendAdminReply = async () => {
-    if (!adminMsg.trim() || !selected) return
+    if (!adminMsg.trim() || !selected || !authToken) return
     setSending(true)
     await fetch('/api/ghost-admin-reply', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({
         session_id: selected.session_id,
-        admin_id: 'admin',
         message: adminMsg.trim(),
       }),
     })
@@ -92,9 +104,10 @@ export default function GhostAdminPanel() {
   }
 
   const freezeUser = async (user) => {
+    if (!authToken) return
     await fetch('/api/ghost-freeze', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ user }),
     })
     fetchSessions()

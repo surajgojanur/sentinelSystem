@@ -61,7 +61,7 @@ def create_app():
     from app.routes.work_management import work_management_bp
     from app.routes.roles import roles_bp
     from app.ghost_routes import ghost_bp
-    from attack_routes import attack_bp
+    from app.attack_routes import attack_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(admin_bp, url_prefix="/api")

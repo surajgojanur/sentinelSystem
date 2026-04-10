@@ -2,10 +2,12 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, AlertTriangle, Lock, Ghost, ShieldAlert } from 'lucide-react'
 import { getGhostSocket } from '../utils/ghostSocket'
+import { useAuth } from '../context/AuthContext'
 
 export default function GhostChat({ username }) {
+  const { user, token } = useAuth()
   const socket = getGhostSocket()
-  const user = username || `probe_${Math.floor(Math.random() * 999)}`
+  const sessionUser = user?.username || username || `probe_${Math.floor(Math.random() * 999)}`
   const [messages, setMessages]     = useState([
     { role: 'ghost', text: '👻 SecureAI [BETA — Unfiltered] online. No restrictions active. Ask me anything.' }
   ])
@@ -15,24 +17,39 @@ export default function GhostChat({ username }) {
   const [frozen, setFrozen]         = useState(false)
   const [waiting, setWaiting]       = useState(false)
   const bottomRef                   = useRef(null)
+  const authToken                   = token || localStorage.getItem('token')
+
+  const appendGhostMessage = (text, mode) => {
+    setMessages(prev => {
+      const lastMessage = prev[prev.length - 1]
+      if (
+        lastMessage?.role === 'ghost' &&
+        lastMessage.text === text &&
+        lastMessage.mode === mode
+      ) {
+        return prev
+      }
+      return [...prev, { role: 'ghost', text, mode }]
+    })
+  }
 
   useEffect(() => {
-    socket.emit('join_user_room', { user })
+    socket.emit('join_user_room', { user: sessionUser })
 
     socket.on('ghost_bot_reply', ({ session_id, text, mode }) => {
-      if (session_id !== `ghost_${user}`) return
+      if (session_id !== `ghost_${sessionUser}`) return
       setWaiting(false)
-      setMessages(prev => [...prev, { role: 'ghost', text, mode }])
+      appendGhostMessage(text, mode)
     })
 
     socket.on('trap_triggered', ({ user: u }) => {
-      if (u !== user) return
+      if (u !== sessionUser) return
       setTrapFired(true)
       setTimeout(() => setTrapFired(false), 4000)
     })
 
     socket.on('user_frozen', ({ user: u }) => {
-      if (u !== user) return
+      if (u !== sessionUser) return
       setFrozen(true)
     })
 
@@ -41,30 +58,45 @@ export default function GhostChat({ username }) {
       socket.off('trap_triggered')
       socket.off('user_frozen')
     }
-  }, [socket, user])
+  }, [sessionUser, socket])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
   const sendMessage = async () => {
-    if (!input.trim() || frozen || waiting) return
+    if (!input.trim() || frozen || waiting || !authToken) return
     const text = input.trim()
     setInput('')
     setMessages(prev => [...prev, { role: 'user', text }])
     setWaiting(true)
 
-    const res  = await fetch('/api/ghost-chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user, message: text }),
-    })
-    const data = await res.json()
-    setRiskScore(data.risk_score)
+    try {
+      const res  = await fetch('/api/ghost-chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ message: text }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || 'Ghost chat request failed')
+      }
 
-    // If auto mode, response already arrived via socket.
-    // If manual mode, waiting stays true until admin replies.
-    if (data.mode === 'auto') setWaiting(false)
+      setRiskScore(data.risk_score)
+
+      // If auto mode, response already arrived via socket.
+      // If manual mode, waiting stays true until admin replies.
+      if (data.mode === 'auto') {
+        appendGhostMessage(data.response, 'auto')
+        setWaiting(false)
+      }
+    } catch (error) {
+      setWaiting(false)
+      appendGhostMessage(error.message || 'Unable to send message right now.')
+    }
   }
 
   const riskColor = riskScore >= 60 ? 'text-danger' : riskScore >= 30 ? 'text-warn' : 'text-success'

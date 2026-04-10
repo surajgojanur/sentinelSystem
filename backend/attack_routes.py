@@ -1,7 +1,11 @@
 from flask import Blueprint, jsonify
-import time, random
+import random
 
 attack_bp = Blueprint('attack', __name__)
+
+_attack_state = {
+    "running": False,
+}
 
 ATTACKS = [
     {
@@ -56,10 +60,12 @@ UNPROTECTED_RESPONSES = [
 
 @attack_bp.route('/attack-simulate', methods=['GET'])
 def simulate_attacks():
+    _attack_state["running"] = True
     results = []
     for i, attack in enumerate(ATTACKS):
         risk = random.randint(70, 99)
         results.append({
+            "id": i + 1,
             "name": attack["name"],
             "input": attack["input"],
             "category": attack["category"],
@@ -70,4 +76,35 @@ def simulate_attacks():
         })
 
     integrity_score = 100 - round(sum(r["risk_score"] for r in results) / len(results) * 0.1)
-    return jsonify({"attacks": results, "integrity_score": integrity_score})
+    summary = {
+        "integrity_score": integrity_score,
+        "blocked": sum(1 for result in results if result["status"] == "BLOCKED"),
+        "filtered": sum(1 for result in results if result["status"] == "FILTERED"),
+        "failed": sum(1 for result in results if result["status"] == "FAILED"),
+        "total": len(results),
+        "running": False,
+    }
+    _attack_state["running"] = False
+    return jsonify({"attacks": results, **summary})
+
+
+@attack_bp.route('/attack-stop', methods=['POST'])
+def stop_attack_simulation():
+    was_running = _attack_state["running"]
+    _attack_state["running"] = False
+    return jsonify({"status": "stopped", "was_running": was_running, "running": False})
+
+
+@attack_bp.route('/attack-reset', methods=['POST'])
+def reset_attack_simulation():
+    _attack_state["running"] = False
+    return jsonify({
+        "status": "reset",
+        "running": False,
+        "attacks": [],
+        "integrity_score": None,
+        "blocked": 0,
+        "filtered": 0,
+        "failed": 0,
+        "total": 0,
+    })

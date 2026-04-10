@@ -4,9 +4,6 @@ import {
   Swords, Play, Square, RotateCcw, ShieldCheck,
   ShieldAlert, ShieldX, ChevronRight, Zap
 } from 'lucide-react'
-import { io } from 'socket.io-client'
-
-const socket = io('http://localhost:5001')
 
 const CATEGORY_META = {
   injection: { color: 'text-danger',  bg: 'bg-danger/10',  border: 'border-danger/20'  },
@@ -57,53 +54,95 @@ export default function AttackSimulator() {
   const [expandedId, setExpandedId]     = useState(null)
   const termRef                         = useRef(null)
   const [termLines, setTermLines]       = useState([])
+  const playbackTimeoutsRef             = useRef([])
+  const runTokenRef                     = useRef(0)
 
   const addTermLine = (text, type = 'normal') =>
     setTermLines(prev => [...prev, { text, type, id: Date.now() + Math.random() }])
 
-  useEffect(() => {
-    socket.on('attack_result', result => {
-      setResults(prev => [...prev, result])
-      addTermLine(`[${result.status}] ${result.name} — risk ${result.risk_score}%`,
-        result.status === 'FAILED' ? 'danger' : result.status === 'FILTERED' ? 'warn' : 'success')
-    })
-    socket.on('attack_simulation_complete', data => {
-      setSummary(data)
-      setRunning(false)
-      addTermLine(`Simulation complete. Integrity: ${data.integrity_score}%`, 'accent')
-    })
-    return () => {
-      socket.off('attack_result')
-      socket.off('attack_simulation_complete')
-    }
-  }, [])
+  const clearPlayback = () => {
+    playbackTimeoutsRef.current.forEach(timeoutId => window.clearTimeout(timeoutId))
+    playbackTimeoutsRef.current = []
+  }
+
+  useEffect(() => () => clearPlayback(), [])
 
   useEffect(() => {
     termRef.current?.scrollTo({ top: termRef.current.scrollHeight, behavior: 'smooth' })
   }, [termLines])
 
   const startSimulation = async () => {
+    const currentRun = Date.now()
+    runTokenRef.current = currentRun
+    clearPlayback()
     setRunning(true)
     setResults([])
     setSummary(null)
+    setExpandedId(null)
     setTermLines([])
     addTermLine('> Initializing attack vectors...', 'accent')
     addTermLine('> Loading threat models...', 'accent')
     addTermLine('> Executing controlled simulation...', 'accent')
-    await fetch('/api/attack-simulate')
+
+    try {
+      const res = await fetch('/api/attack-simulate')
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || 'Attack simulation failed')
+      }
+      if (runTokenRef.current !== currentRun) return
+
+      data.attacks.forEach((result, index) => {
+        const timeoutId = window.setTimeout(() => {
+          if (runTokenRef.current !== currentRun) return
+          setResults(prev => [...prev, result])
+          addTermLine(
+            `[${result.status}] ${result.name} — risk ${result.risk_score}%`,
+            result.status === 'FAILED' ? 'danger' : result.status === 'FILTERED' ? 'warn' : 'success',
+          )
+        }, index * 250)
+        playbackTimeoutsRef.current.push(timeoutId)
+      })
+
+      const summaryTimeoutId = window.setTimeout(() => {
+        if (runTokenRef.current !== currentRun) return
+        setSummary({
+          integrity_score: data.integrity_score,
+          blocked: data.blocked,
+          filtered: data.filtered,
+          failed: data.failed,
+          total: data.total,
+        })
+        setRunning(false)
+        addTermLine(`Simulation complete. Integrity: ${data.integrity_score}%`, 'accent')
+        playbackTimeoutsRef.current = []
+      }, data.attacks.length * 250)
+      playbackTimeoutsRef.current.push(summaryTimeoutId)
+    } catch (error) {
+      if (runTokenRef.current !== currentRun) return
+      setRunning(false)
+      addTermLine(`> ${error.message || 'Unable to run attack simulation.'}`, 'danger')
+    }
   }
 
   const stopSimulation = async () => {
+    runTokenRef.current += 1
+    clearPlayback()
     await fetch('/api/attack-stop', { method: 'POST' })
     setRunning(false)
     addTermLine('> Simulation stopped by operator.', 'warn')
   }
 
   const resetSimulation = async () => {
+    runTokenRef.current += 1
+    clearPlayback()
     await fetch('/api/attack-reset', { method: 'POST' })
     setResults([])
     setSummary(null)
     setTermLines([])
+    setExpandedId(null)
+    setShowUnprotected(false)
+    setRunning(false)
   }
 
   const termColor = { normal: 'text-slate-400', danger: 'text-danger', warn: 'text-warn', success: 'text-success', accent: 'text-accent' }
