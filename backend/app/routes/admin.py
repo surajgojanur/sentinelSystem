@@ -6,8 +6,10 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 from werkzeug.security import generate_password_hash
 
 from app import db
+from app.models.face_profile import FaceProfile
 from app.models.role import Role
 from app.models.user import User
+from app.services.face_attendance import build_face_embedding
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -45,9 +47,10 @@ def create_user():
     data = request.get_json() or {}
     username = data.get('username', '').strip()
     role_name = data.get('role', '').strip()
+    image_payload = data.get("image_base64", "").strip()
 
-    if not username or not role_name:
-        return jsonify({"error": "Username and role are required"}), 400
+    if not username or not role_name or not image_payload:
+        return jsonify({"error": "Username, role, and face image are required"}), 400
 
     if User.query.filter_by(username=username).first():
         return jsonify({"error": "Username already taken"}), 409
@@ -60,6 +63,11 @@ def create_user():
     if not role:
         return jsonify({"error": "Invalid role"}), 400
 
+    try:
+        embedding, sample_hash = build_face_embedding(image_payload)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
     login_code = _generate_login_code()
     user = User(
         username=username,
@@ -70,12 +78,22 @@ def create_user():
         login_code=login_code,
     )
     db.session.add(user)
+    db.session.flush()
+
+    profile = FaceProfile(
+        user_id=user.id,
+        sample_hash=sample_hash,
+        embedding_dim=len(embedding),
+    )
+    profile.set_embedding(embedding)
+    db.session.add(profile)
     db.session.commit()
 
     return jsonify({
-        "message": "User created successfully",
+        "message": "User created successfully with face credential",
         "login_code": login_code,
         "user": user.to_dict(),
+        "face_profile": profile.to_dict(),
     }), 201
 
 

@@ -3,6 +3,7 @@ from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identi
 from werkzeug.security import check_password_hash
 
 from app import db
+from app.models.face_profile import FaceProfile
 from app.models.user import User
 from app.services.face_attendance import match_face
 
@@ -54,6 +55,8 @@ def face_verify():
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
+    if not FaceProfile.query.filter_by(user_id=user.id).first():
+        return jsonify({"error": "No face credential is enrolled for this account. Contact admin."}), 403
 
     data = request.get_json() or {}
     image_payload = data.get("image_base64", "").strip()
@@ -67,7 +70,7 @@ def face_verify():
 
     if not profile:
         return jsonify({
-            "error": "Face not recognized. Register your face in Attendance first.",
+            "error": "Face not recognized for this account.",
             "confidence": round(float(score), 4),
         }), 403
 

@@ -5,8 +5,7 @@ import api from '../utils/api'
 import { getSocket, disconnectSocket } from '../utils/socket'
 import { Send, MessageSquare, Circle, Loader } from 'lucide-react'
 import { format } from 'date-fns'
-
-const ROLE_COLORS = { admin: 'bg-purple-400', hr: 'bg-warn', intern: 'bg-accent' }
+import { getRoleMeta } from '../utils/roles'
 
 export default function PrivateChatPage() {
   const { user, token } = useAuth()
@@ -135,7 +134,9 @@ export default function PrivateChatPage() {
               }`}
             >
               <div className="relative flex-shrink-0">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-bg-900 ${ROLE_COLORS[u.role] || 'bg-slate-500'}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-bg-900 ${
+                  u.role === 'admin' ? 'bg-purple-400' : u.role === 'hr' ? 'bg-warn' : u.role === 'intern' ? 'bg-accent' : 'bg-slate-500'
+                }`}>
                   {u.username[0].toUpperCase()}
                 </div>
                 {onlineIds.includes(u.id) && (
@@ -173,7 +174,9 @@ export default function PrivateChatPage() {
             {/* Chat header */}
             <div className="flex items-center gap-3 px-5 py-4 border-b border-white/5 glass">
               <div className="relative">
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-bg-900 ${ROLE_COLORS[activeUser.role]}`}>
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-bg-900 ${
+                  activeUser.role === 'admin' ? 'bg-purple-400' : activeUser.role === 'hr' ? 'bg-warn' : activeUser.role === 'intern' ? 'bg-accent' : 'bg-slate-500'
+                }`}>
                   {activeUser.username[0].toUpperCase()}
                 </div>
                 {onlineIds.includes(activeUser.id) && (
@@ -188,7 +191,7 @@ export default function PrivateChatPage() {
                   ) : (
                     <span>○ Offline</span>
                   )}
-                  {' · '}{activeUser.role.toUpperCase()}
+                  {' · '}{getRoleMeta(activeUser.role).label}
                 </p>
               </div>
             </div>

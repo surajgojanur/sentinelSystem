@@ -6,6 +6,7 @@ from app.models.question_feedback import QuestionFeedback
 from app.models.favorite_question import FavoriteQuestion
 from app.models.face_profile import FaceProfile
 from app.models.attendance_record import AttendanceRecord
+from app.models.project import Project
 from app.models.work_assignment import WorkAssignment
 from app.models.work_escalation import WorkEscalation
 from app.models.work_progress_update import WorkProgressUpdate
@@ -19,6 +20,7 @@ __all__ = [
     "FavoriteQuestion",
     "FaceProfile",
     "AttendanceRecord",
+    "Project",
     "WorkAssignment",
     "WorkEscalation",
     "WorkProgressUpdate",

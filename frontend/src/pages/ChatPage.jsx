@@ -9,6 +9,7 @@ import {
 
 import { useAuth } from '../context/AuthContext'
 import api from '../utils/api'
+import { FALLBACK_ROLE_NAMES, getRoleMeta } from '../utils/roles'
 
 const STATUS_CONFIG = {
   allowed: { icon: ShieldCheck, color: 'text-success', bg: 'bg-success/10 border-success/20', label: 'Allowed' },
@@ -20,12 +21,6 @@ const RISK_CONFIG = {
   low: { color: 'text-success', bg: 'bg-success/10 border-success/20', bar: '#06d6a0' },
   medium: { color: 'text-warn', bg: 'bg-warn/10 border-warn/20', bar: '#ffb703' },
   high: { color: 'text-danger', bg: 'bg-danger/10 border-danger/20', bar: '#ff4d6d' },
-}
-
-const ROLE_INFO = {
-  admin: { color: 'text-purple-400', label: 'ADMIN', desc: 'Full access granted' },
-  hr: { color: 'text-warn', label: 'HR', desc: 'PII data is masked' },
-  intern: { color: 'text-accent', label: 'INTERN', desc: 'Sensitive data blocked' },
 }
 
 function TypingIndicator() {
@@ -190,7 +185,12 @@ export default function ChatPage() {
   })
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
-  const roleInfo = ROLE_INFO[user?.role] || ROLE_INFO.intern
+  const currentRole = getRoleMeta(user?.role)
+  const roleInfo = {
+    color: currentRole.value === 'admin' ? 'text-purple-400' : currentRole.value === 'hr' ? 'text-warn' : currentRole.value === 'intern' ? 'text-accent' : 'text-slate-200',
+    label: currentRole.badge,
+    desc: currentRole.desc,
+  }
 
   const loadQuestionData = async () => {
     try {
@@ -398,7 +398,9 @@ export default function ChatPage() {
                     <input value={questionForm.keywords} onChange={e => setQuestionForm(prev => ({ ...prev, keywords: e.target.value }))} placeholder="Keywords, comma separated" className="w-full px-3 py-2 rounded-xl bg-bg-800 border border-white/8 text-sm text-white placeholder-slate-600" />
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {['admin', 'hr', 'intern'].map(role => (
+                    {FALLBACK_ROLE_NAMES.map(roleName => {
+                      const role = roleName.toLowerCase()
+                      return (
                       <button
                         key={role}
                         onClick={() => setQuestionForm(prev => ({
@@ -407,9 +409,10 @@ export default function ChatPage() {
                         }))}
                         className={`px-3 py-2 rounded-xl text-xs border ${questionForm.allowed_roles.includes(role) ? 'bg-accent/10 border-accent/20 text-accent' : 'bg-white/5 border-white/8 text-slate-300'}`}
                       >
-                        {role}
+                        {roleName}
                       </button>
-                    ))}
+                      )
+                    })}
                   </div>
                   <button onClick={addQuestion} disabled={savingQuestion} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-bg-900 text-sm font-semibold disabled:opacity-50">
                     <Plus size={14} />{savingQuestion ? 'Saving...' : 'Add question'}

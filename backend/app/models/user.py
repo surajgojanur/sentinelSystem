@@ -32,6 +32,7 @@ class User(db.Model):
             "role_id":              self.role_id,
             "created_at":           self.created_at.isoformat(),
             "is_active":            self.is_active,
+            "face_enrolled":        bool(getattr(self, "face_profile", None)),
             "sensitive_query_count":self.sensitive_query_count,
             "is_suspicious":        self.is_suspicious,
             "flagged_at":           self.flagged_at.isoformat() if self.flagged_at else None,

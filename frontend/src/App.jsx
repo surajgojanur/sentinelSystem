@@ -16,6 +16,7 @@ import MyWorkPage from './pages/MyWorkPage'
 import WorkBoardPage from './pages/WorkBoardPage'
 import WorkEscalationsPage from './pages/WorkEscalationsPage'
 import AdminCreateUserPage from './pages/AdminCreateUserPage'
+import { isManagerRole } from './utils/roles'
 
 function ProtectedRoute({ children, adminOnly = false, managerOnly = false }) {
   const { user, loading } = useAuth()
@@ -30,7 +31,7 @@ function ProtectedRoute({ children, adminOnly = false, managerOnly = false }) {
   )
   if (!user) return <Navigate to="/login" replace />
   if (adminOnly && user.role !== 'admin') return <Navigate to="/chat" replace />
-  if (managerOnly && !['admin', 'hr'].includes(user.role)) return <Navigate to="/my-work" replace />
+  if (managerOnly && !isManagerRole(user.role)) return <Navigate to="/my-work" replace />
   return children
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Camera, RefreshCw, ScanFace, ShieldCheck, UserCheck } from 'lucide-react'
+import { Camera, RefreshCw, ShieldCheck, UserCheck } from 'lucide-react'
 import { format } from 'date-fns'
 
 import { useAuth } from '../context/AuthContext'
@@ -148,7 +148,7 @@ export default function FaceAttendancePage() {
           <div>
             <h1 className="text-xl font-bold text-white">Face Attendance</h1>
             <p className="text-[10px] text-slate-500 font-mono mt-0.5 tracking-widest uppercase">
-              Register your face and mark check-in/check-out
+              Use your admin-enrolled face credential for check-in/check-out
             </p>
           </div>
           <button
@@ -177,14 +177,9 @@ export default function FaceAttendancePage() {
             {cameraError && <p className="mt-3 text-xs text-danger">{cameraError}</p>}
 
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button
-                onClick={() => callFaceApi('/face/register')}
-                disabled={busy || !cameraReady}
-                className="px-4 py-3 rounded-xl border border-accent/30 bg-accent/10 text-accent font-semibold hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <ScanFace size={15} className="inline mr-2" />
-                Register My Face
-              </button>
+              <div className="px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-slate-400 text-sm">
+                Face enrollment is managed by admin during user registration.
+              </div>
               <button
                 onClick={() => callFaceApi('/attendance/mark')}
                 disabled={busy || !cameraReady}
