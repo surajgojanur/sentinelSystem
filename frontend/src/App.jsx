@@ -11,6 +11,10 @@ import FaceAttendancePage from './pages/FaceAttendancePage'
 import FaceUnlockPage from './pages/FaceUnlockPage'
 import GhostModePage from './pages/GhostModePage'
 import AttackSimPage from './pages/AttackSimPage'
+import WorkAssignmentsPage from './pages/WorkAssignmentsPage'
+import MyWorkPage from './pages/MyWorkPage'
+import WorkBoardPage from './pages/WorkBoardPage'
+import WorkEscalationsPage from './pages/WorkEscalationsPage'
 import AdminCreateUserPage from './pages/AdminCreateUserPage'
 
 function ProtectedRoute({ children, adminOnly = false, managerOnly = false }) {
@@ -58,6 +62,18 @@ function AppRoutes() {
         <Route path="work-assignments" element={
           <ProtectedRoute managerOnly>
             <WorkAssignmentsPage />
+          </ProtectedRoute>
+        } />
+
+        <Route path="work-board" element={
+          <ProtectedRoute managerOnly>
+            <WorkBoardPage />
+          </ProtectedRoute>
+        } />
+
+        <Route path="work-escalations" element={
+          <ProtectedRoute managerOnly>
+            <WorkEscalationsPage />
           </ProtectedRoute>
         } />
 

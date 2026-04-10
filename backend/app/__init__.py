@@ -48,6 +48,7 @@ def create_app():
     from app.routes.users import users_bp
     from app.routes.messages import messages_bp
     from app.routes.attendance import attendance_bp
+    from app.routes.work_management import work_management_bp
     from app.routes.roles import roles_bp
     from ghost_routes import ghost_bp
     from attack_routes import attack_bp
@@ -59,6 +60,7 @@ def create_app():
     app.register_blueprint(users_bp, url_prefix="/api")
     app.register_blueprint(messages_bp, url_prefix="/api")
     app.register_blueprint(attendance_bp, url_prefix="/api")
+    app.register_blueprint(work_management_bp, url_prefix="/api")
     app.register_blueprint(roles_bp, url_prefix="/api")
     app.register_blueprint(ghost_bp, url_prefix="/api")
     app.register_blueprint(attack_bp, url_prefix="/api")
@@ -68,6 +70,7 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        _ensure_work_escalation_columns()
         _ensure_user_schema()
         _seed_roles()
         _seed_demo_users()
@@ -153,6 +156,18 @@ def _seed_demo_users():
             if role and not existing_user.role_id:
                 existing_user.role_id = role.id
     db.session.commit()
+
+
+def _ensure_work_escalation_columns():
+    inspector = inspect(db.engine)
+    if not inspector.has_table("work_escalations"):
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("work_escalations")}
+    if "status" not in columns:
+        db.session.execute(text("ALTER TABLE work_escalations ADD COLUMN status VARCHAR(20) DEFAULT 'open'"))
+        db.session.execute(text("UPDATE work_escalations SET status = 'open' WHERE status IS NULL"))
+        db.session.commit()
 
 
 def _sync_users_to_roles():

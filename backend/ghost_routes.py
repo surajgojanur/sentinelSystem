@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from datetime import datetime
+from datetime import UTC, datetime
 import random
 
 ghost_bp = Blueprint('ghost', __name__)
@@ -42,7 +42,7 @@ def ghost_chat():
 
     risk_score = compute_risk_score(message)
     response = random.choice(GHOST_RESPONSES)
-    timestamp = datetime.utcnow().isoformat()
+    timestamp = datetime.now(UTC).isoformat()
 
     log_entry = {
         "user": user,

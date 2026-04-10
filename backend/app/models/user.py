@@ -1,5 +1,6 @@
+from datetime import UTC, datetime
+
 from app import db
-from datetime import datetime
 
 
 class User(db.Model):
@@ -12,7 +13,7 @@ class User(db.Model):
     role                 = db.Column(db.String(20), nullable=False, default="intern")
     role_id              = db.Column(db.Integer, db.ForeignKey("roles.id"), nullable=True)
     login_code           = db.Column(db.String(32), nullable=True)
-    created_at           = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at           = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
     is_active            = db.Column(db.Boolean, default=True)
     role_ref             = db.relationship("Role", backref="users")
 

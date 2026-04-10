@@ -11,7 +11,7 @@ import json
 import logging
 import os
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -290,7 +290,7 @@ def capture_unanswered_question(query: str, role: str, username: str) -> dict:
         raise ValueError("Query is required")
 
     queue = _read_json_array(UNANSWERED_QUEUE_PATH)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(UTC).isoformat()
     for item in queue:
         if item.get("query", "").strip().lower() == normalized_query.lower():
             item["count"] = int(item.get("count", 1)) + 1
@@ -326,7 +326,7 @@ def resolve_unanswered_question(queue_id: str, status: str, resolution_note: str
         if item.get("id") == queue_id:
             item["status"] = status
             item["resolution_note"] = resolution_note.strip()
-            item["resolved_at"] = datetime.utcnow().isoformat() if status != "open" else None
+            item["resolved_at"] = datetime.now(UTC).isoformat() if status != "open" else None
             _write_json_array(UNANSWERED_QUEUE_PATH, queue)
             return item
     raise ValueError("Queue item not found")
@@ -910,7 +910,7 @@ def _normalize_question_record(item: dict) -> dict:
 def _append_history(action: str, question_id: str, *, actor: str | None, before: dict | None = None, after: dict | None = None) -> None:
     history = _read_json_array(QUESTION_HISTORY_PATH)
     history.append({
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "action": action,
         "question_id": question_id,
         "actor": actor or "system",
@@ -960,7 +960,7 @@ def _build_unique_id(question: str, question_bank: list[dict]) -> str:
 
 
 def _build_queue_id(query: str) -> str:
-    return f"{'-'.join(_tokenize(query))[:40] or 'question'}-{int(datetime.utcnow().timestamp())}"
+    return f"{'-'.join(_tokenize(query))[:40] or 'question'}-{int(datetime.now(UTC).timestamp())}"
 
 
 def _normalize_keywords(keywords: list[str]) -> list[str]:

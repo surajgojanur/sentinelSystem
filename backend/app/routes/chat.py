@@ -1,7 +1,7 @@
 import csv
 import io
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 from flask import Blueprint, request, jsonify, make_response
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -44,7 +44,7 @@ _histories: dict = {}
 
 def _get_user() -> User | None:
     user_id = int(get_jwt_identity())
-    return User.query.get(user_id)
+    return db.session.get(User, user_id)
 
 
 def _require_admin() -> User | None:
@@ -84,7 +84,7 @@ def chat():
         user.sensitive_query_count = (user.sensitive_query_count or 0) + 1
         if user.sensitive_query_count >= SUSPICIOUS_QUERY_THRESHOLD and not user.is_suspicious:
             user.is_suspicious = True
-            user.flagged_at = datetime.utcnow()
+            user.flagged_at = datetime.now(UTC)
 
     log = AuditLog(
         user_id=user.id,

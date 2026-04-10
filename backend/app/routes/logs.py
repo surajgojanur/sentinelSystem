@@ -17,7 +17,7 @@ logs_bp = Blueprint("logs", __name__)
 
 def _require_admin():
     user_id = int(get_jwt_identity())
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     return user if user and user.role == "admin" else None
 
 
@@ -58,7 +58,7 @@ def get_logs():
     if filter_query:
         query = query.filter(
             or_(
-                AuditLog.query.ilike(f"%{filter_query}%"),
+                AuditLog.query_text.ilike(f"%{filter_query}%"),
                 AuditLog.filtered_response.ilike(f"%{filter_query}%"),
                 AuditLog.ai_response.ilike(f"%{filter_query}%"),
             )
@@ -171,7 +171,7 @@ def get_stats():
     ]
     feedback_rows = []
     feedback_query = (
-        db.session.query(QuestionFeedback, AuditLog.query)
+        db.session.query(QuestionFeedback, AuditLog.query_text)
         .join(AuditLog, QuestionFeedback.audit_log_id == AuditLog.id)
         .all()
     )
@@ -257,7 +257,7 @@ def update_suspicious(user_id):
     if not admin:
         return jsonify({"error": "Admin access required"}), 403
 
-    target = User.query.get(user_id)
+    target = db.session.get(User, user_id)
     if not target:
         return jsonify({"error": "User not found"}), 404
 
