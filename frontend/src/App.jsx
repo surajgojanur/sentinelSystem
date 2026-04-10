@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
@@ -10,23 +10,21 @@ import DashboardPage from './pages/DashboardPage'
 import QuestionBankPage from './pages/QuestionBankPage'
 import FaceAttendancePage from './pages/FaceAttendancePage'
 import FaceUnlockPage from './pages/FaceUnlockPage'
+import GhostModePage from './pages/GhostModePage'
+import AttackSimPage from './pages/AttackSimPage'
 
-function ProtectedRoute({ children, adminOnly = false, allowWithoutFace = false }) {
-  const { user, loading, faceVerified } = useAuth()
-  const location = useLocation()
+function ProtectedRoute({ children, adminOnly = false }) {
+  const { user, loading } = useAuth()
   if (loading) return (
     <div className="flex h-full items-center justify-center bg-bg-900">
       <div className="flex gap-2">
-        {[0,1,2].map(i => (
+        {[0, 1, 2].map(i => (
           <div key={i} className="typing-dot" style={{ animationDelay: `${i * 0.2}s` }} />
         ))}
       </div>
     </div>
   )
   if (!user) return <Navigate to="/login" replace />
-  if (!allowWithoutFace && !faceVerified) {
-    return <Navigate to="/face-unlock" replace state={{ from: location.pathname }} />
-  }
   if (adminOnly && user.role !== 'admin') return <Navigate to="/chat" replace />
   return children
 }
@@ -36,7 +34,7 @@ function AppRoutes() {
   return (
     <Routes>
       {/* Public routes — redirect to welcome if already logged in */}
-      <Route path="/login"    element={user ? <Navigate to="/welcome" replace /> : <LoginPage />} />
+      <Route path="/login" element={user ? <Navigate to="/welcome" replace /> : <LoginPage />} />
       <Route path="/register" element={user ? <Navigate to="/welcome" replace /> : <RegisterPage />} />
 
       {/* Welcome splash — shown right after login */}
@@ -46,7 +44,7 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       <Route path="/face-unlock" element={
-        <ProtectedRoute allowWithoutFace>
+        <ProtectedRoute>
           <FaceUnlockPage />
         </ProtectedRoute>
       } />
@@ -54,14 +52,28 @@ function AppRoutes() {
       {/* App shell with sidebar */}
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Navigate to="/welcome" replace />} />
-        <Route path="chat"     element={<ChatPage />} />
+        <Route path="chat" element={<ChatPage />} />
         <Route path="messages" element={<PrivateChatPage />} />
         <Route path="attendance" element={<FaceAttendancePage />} />
+
+        <Route path="ghost-mode" element={
+          <ProtectedRoute adminOnly>
+            <GhostModePage />
+          </ProtectedRoute>
+        } />
+
+        <Route path="attack-sim" element={
+          <ProtectedRoute adminOnly>
+            <AttackSimPage />
+          </ProtectedRoute>
+        } />
+
         <Route path="question-bank" element={
           <ProtectedRoute adminOnly>
             <QuestionBankPage />
           </ProtectedRoute>
         } />
+
         <Route path="dashboard" element={
           <ProtectedRoute adminOnly>
             <DashboardPage />

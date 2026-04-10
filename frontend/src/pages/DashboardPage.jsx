@@ -191,7 +191,7 @@ export default function DashboardPage() {
       <div className="px-6 py-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-white">Governance Dashboard</h1>
+            <h1 className="text-xl font-bold text-white">Governance Dashboard Pavan</h1>
             <p className="text-[10px] text-slate-500 font-mono mt-0.5 tracking-widest uppercase">Audit, analytics, dataset coverage, and review signals</p>
           </div>
           <div className="flex items-center gap-2">
