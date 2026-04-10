@@ -222,11 +222,83 @@ Provider notes:
 - HR: `hr_jane` / `hr123`
 - Intern: `intern_bob` / `intern123`
 
+## Work Assignment Module (v1)
+
+### Feature Overview
+This repo now includes the first slice of an advanced work assignment and KPI tracking flow:
+
+- `admin` and `hr` users can create work assignments
+- assignees can view their own work in `My Work`
+- assignees can submit incremental progress updates over time
+- KPI values are computed dynamically from stored progress
+- assignment status moves between `pending`, `in_progress`, and `completed`
+- assignment creation and progress submission write audit-log entries
+
+### Current Pages
+- Manager-facing page: `/work-assignments`
+- Employee-facing page: `/my-work`
+
+### Current API Endpoints
+- `POST /api/work/assignments`
+  Create an assignment. Allowed for `admin` and `hr`.
+- `GET /api/work/assignments`
+  List assignments. `admin` and `hr` can list broadly; assignees see only their own assignments.
+- `POST /api/work/assignments/<assignment_id>/progress`
+  Submit a progress update. Allowed only for the assignee.
+- `GET /api/work/assignments/<assignment_id>/kpi`
+  Return computed KPI values for a single assignment.
+
+### KPI Behavior
+- `expected_units`: target amount of work
+- `total_completed_units`: sum of all submitted progress updates
+- `completion_ratio = total_completed_units / expected_units`
+- `weighted_score = min(completion_ratio, 1.0) * weight`
+
+### Test Coverage
+Backend coverage was added for the first slice of the module. The tests cover:
+
+- assignment model defaults
+- progress aggregation
+- KPI computation for expected units, completed units, completion ratio, and weighted score
+- status transitions from `pending` to `in_progress` to `completed`
+- create permissions for `admin` and `hr`
+- assignee-only list visibility
+- progress submission rules for assignee vs non-assignee
+- KPI endpoint correctness
+- malformed due date and invalid payload handling
+- invalid assignment ID handling
+- zero-target and over-completion KPI edge cases
+
+Frontend automated tests were not added because the repo does not currently have a lightweight frontend test harness.
+
+### Running Tests
+Install backend dependencies:
+
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+Run the focused work-management tests:
+
+```bash
+cd backend
+python3 -m pytest tests/test_work_management.py
+```
+
+Run the current backend test suite:
+
+```bash
+cd backend
+python3 -m pytest
+```
+
 # 9. ⚠️ Known Limitations (IMPORTANT)
 - **In-memory chat context**: conversation history is stored in process memory and resets on restart.
 - **JSON-backed queues/history**: question-bank history and unanswered queue are file-based, not DB-backed.
 - **Demo-mode assumptions**: if no provider key is configured, responses use mock mode for reliability.
 - **Dev-first defaults**: current setup prioritizes demo speed over hard production controls.
+- **Work assignment module is v1**: no escalation workflow, advanced analytics, or dedicated manager hierarchy yet.
 
 These are intentional tradeoffs for hackathon velocity and clarity.
 
